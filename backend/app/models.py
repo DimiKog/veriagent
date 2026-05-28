@@ -15,3 +15,19 @@ class AuditEvent(BaseModel):
     policy_version: str
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     metadata: dict[str, Any] | None = None
+
+
+class StoredEventResponse(BaseModel):
+    event_id: str
+    event_hash: str
+    canonical_event_json: str
+    created_at: str
+
+
+class VerifyResponse(BaseModel):
+    event_id: str
+    verified: bool
+    computed_hash: str
+    stored_hash: str | None = None
+    canonicalization: str = "RFC8785-JCS"
+    hash_algorithm: str = "SHA-256"
