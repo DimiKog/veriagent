@@ -17,6 +17,21 @@ class AuditEvent(BaseModel):
     metadata: dict[str, Any] | None = None
 
 
+class IngestionReceipt(BaseModel):
+    event_id: str
+    event_hash: str
+    created_at: str
+    signature: str
+    algorithm: str = "HMAC-SHA256"
+
+
+class StoreEventResponse(BaseModel):
+    event_id: str
+    event_hash: str
+    created_at: str
+    receipt: IngestionReceipt
+
+
 class StoredEventResponse(BaseModel):
     event_id: str
     event_hash: str

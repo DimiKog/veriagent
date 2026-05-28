@@ -3,6 +3,8 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.hashing import hash_event
 from app.models import AuditEvent
+from app.receipts import verify_receipt
+from tests.conftest import TEST_RECEIPT_SECRET
 
 client = TestClient(app)
 
@@ -27,7 +29,7 @@ def test_health_endpoint():
 
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
-    assert response.json()["version"] == "0.2.0"
+    assert response.json()["version"] == "0.3.0"
 
 
 def test_audit_hash_endpoint():
@@ -48,16 +50,30 @@ def test_store_and_get_audit_event():
     stored = store_response.json()
     assert stored["event_id"] == "event-001"
     assert len(stored["event_hash"]) == 64
-    assert stored["canonical_event_json"]
     assert stored["created_at"]
+    assert "canonical_event_json" not in stored
+
+    receipt = stored["receipt"]
+    assert receipt["event_id"] == stored["event_id"]
+    assert receipt["event_hash"] == stored["event_hash"]
+    assert receipt["created_at"] == stored["created_at"]
+    assert receipt["algorithm"] == "HMAC-SHA256"
+    assert len(receipt["signature"]) == 64
+    assert verify_receipt(
+        event_id=receipt["event_id"],
+        event_hash=receipt["event_hash"],
+        created_at=receipt["created_at"],
+        signature=receipt["signature"],
+        secret=TEST_RECEIPT_SECRET,
+    )
 
     get_response = client.get("/audit/events/event-001")
     assert get_response.status_code == 200
     retrieved = get_response.json()
     assert retrieved["event_id"] == stored["event_id"]
     assert retrieved["event_hash"] == stored["event_hash"]
-    assert retrieved["canonical_event_json"] == stored["canonical_event_json"]
     assert retrieved["created_at"] == stored["created_at"]
+    assert retrieved["canonical_event_json"]
 
 
 def test_store_duplicate_event_returns_409():

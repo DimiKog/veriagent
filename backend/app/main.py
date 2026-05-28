@@ -3,7 +3,14 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 
 from app.hashing import canonicalize_event, hash_event
-from app.models import AuditEvent, StoredEventResponse, VerifyResponse
+from app.models import (
+    AuditEvent,
+    IngestionReceipt,
+    StoreEventResponse,
+    StoredEventResponse,
+    VerifyResponse,
+)
+from app.receipts import generate_receipt
 from app.storage import EventAlreadyExistsError, get_audit_event, init_db, store_audit_event
 
 
@@ -13,7 +20,7 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title="VeriAgent API", version="0.2.0", lifespan=lifespan)
+app = FastAPI(title="VeriAgent API", version="0.3.0", lifespan=lifespan)
 
 
 @app.get("/health")
@@ -21,7 +28,7 @@ def health():
     return {
         "status": "ok",
         "service": "veriagent",
-        "version": "0.2.0",
+        "version": "0.3.0",
     }
 
 
@@ -35,7 +42,7 @@ def create_event_hash(event: AuditEvent):
     }
 
 
-@app.post("/audit/events", response_model=StoredEventResponse)
+@app.post("/audit/events", response_model=StoreEventResponse)
 def store_event(event: AuditEvent):
     canonical_bytes = canonicalize_event(event)
     canonical_event_json = canonical_bytes.decode("utf-8")
@@ -53,11 +60,18 @@ def store_event(event: AuditEvent):
             detail=f"Event already stored: {exc.args[0]}",
         ) from exc
 
-    return StoredEventResponse(
+    receipt_data = generate_receipt(
         event_id=stored.event_id,
         event_hash=stored.event_hash,
-        canonical_event_json=stored.canonical_event_json,
         created_at=stored.created_at,
+    )
+    receipt = IngestionReceipt(**receipt_data)
+
+    return StoreEventResponse(
+        event_id=stored.event_id,
+        event_hash=stored.event_hash,
+        created_at=stored.created_at,
+        receipt=receipt,
     )
 
 
