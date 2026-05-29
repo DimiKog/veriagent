@@ -113,7 +113,7 @@ Tested:
 Decisions:
 - Solidity anchor contract only; no backend `web3.py` integration, Besu deployment, frontend changes, or blockchain API endpoints yet.
 - Foundry project lives under `contracts/` with Solc `0.8.20`.
-- On-chain anchors store `batchId`, Merkle root, event count, metadata hash, timestamp, and anchoring address.
+- On-chain anchors are keyed by `batchId` and store `Merkle root`, `event count`, `metadata hash`, `timestamp`, and `anchoring address`.
 - Owner-gated `anchorBatch`; custom errors instead of string reverts.
 - Duplicate batch IDs rejected when `anchoredAt` is already set.
 
@@ -136,3 +136,17 @@ Tested (Foundry, 14 tests):
 
 Current limitation:
 - Anchors exist only in the local Foundry project; no chain deployment or backend anchoring flow yet.
+
+## 2026-05-29 (Phase 5B)
+
+Decisions:
+- Local Anvil deployment script only; no Besu deployment, backend `web3.py` integration, or frontend changes yet.
+- Deployment uses Foundry `vm.startBroadcast()` / `vm.stopBroadcast()`; signing keys come from the CLI or unlocked Anvil accounts, not from source code.
+
+Implemented:
+- `contracts/script/DeployVeriAgentAnchor.s.sol` deploys `VeriAgentAnchor` and logs the contract address and owner.
+- `foundry.toml` `script` path set to `script/`.
+
+Current limitation:
+- Contract can be deployed to a local Anvil node only; no Besu deployment yet.
+- No backend anchoring flow yet.

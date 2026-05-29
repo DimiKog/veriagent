@@ -22,6 +22,41 @@ VeriAgent currently supports:
 
 See [docs/03-api.md](docs/03-api.md) for endpoint details and [docs/04-testing.md](docs/04-testing.md) for the test guide.
 
+## Local Contract Deployment (Anvil)
+
+From the project root, run Foundry tests and deploy `VeriAgentAnchor` to a local Anvil node.
+
+Terminal 1 — start Anvil:
+
+```bash
+anvil
+```
+
+Terminal 2 — test and deploy (uses Anvil’s unlocked default accounts; do not commit private keys):
+
+```bash
+cd contracts
+forge test
+forge script script/DeployVeriAgentAnchor.s.sol:DeployVeriAgentAnchor \
+  --rpc-url http://127.0.0.1:8545 \
+  --broadcast \
+  --unlocked \
+  --sender 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266
+```
+
+`0xf39F…2266` is Anvil’s first default unlocked account (local development only).
+
+To sign with a key from your environment instead of `--unlocked`:
+
+```bash
+forge script script/DeployVeriAgentAnchor.s.sol:DeployVeriAgentAnchor \
+  --rpc-url http://127.0.0.1:8545 \
+  --broadcast \
+  --private-key "$PRIVATE_KEY"
+```
+
+The script prints the deployed contract address and owner. Deployment artifacts are written under `contracts/broadcast/` (gitignored).
+
 ## Local Run
 
 From the project root:
