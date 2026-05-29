@@ -79,3 +79,17 @@ class BatchProofResponse(BaseModel):
     event_hash: str
     merkle_root: str
     proof: list[MerkleProofStep]
+
+
+class BatchAnchorRecord(BaseModel):
+    batch_id: str
+    anchor_address: str
+    tx_hash: str
+    block_number: int
+    anchored_at: int
+    anchored_by: str
+    chain_id: int
+
+
+class AnchorBatchResponse(BatchAnchorRecord):
+    already_anchored: bool

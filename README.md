@@ -19,6 +19,7 @@ VeriAgent currently supports:
 - HMAC-SHA256 signed ingestion receipts on event storage
 - Local Merkle batching over stored event hashes
 - API-generated Merkle inclusion proofs for stored batch events
+- On-chain batch anchoring API with SQLite anchor transaction records
 
 See [docs/03-api.md](docs/03-api.md) for endpoint details and [docs/04-testing.md](docs/04-testing.md) for the test guide.
 
@@ -97,6 +98,8 @@ http://127.0.0.1:8000/docs
 6. Create a Merkle batch with `POST /audit/batches`.
 7. Generate an inclusion proof using `GET /audit/batches/{batch_id}/proof/{event_id}`.
 8. Verify inclusion with `POST /audit/merkle/verify` using the returned batch root and proof.
+9. With Anvil running and anchoring env vars set, anchor the batch with `POST /audit/batches/{batch_id}/anchor`.
+10. Retrieve the stored anchor record with `GET /audit/batches/{batch_id}/anchor`.
 
 Expected result:
 
@@ -105,6 +108,22 @@ Expected result:
 - Modified event: `verified: false`
 - Valid Merkle proof: `verified: true`
 - Tampered Merkle proof: `verified: false`
+- Second `POST .../anchor` on the same batch: `already_anchored: true` and no new transaction
+
+### Anchoring environment variables
+
+For `POST /audit/batches/{batch_id}/anchor`:
+
+```bash
+export VERIAGENT_RPC_URL="http://127.0.0.1:8545"
+export VERIAGENT_CHAIN_ID="31337"
+export VERIAGENT_ANCHOR_CONTRACT_ADDRESS="0x..."
+export VERIAGENT_ANCHOR_PRIVATE_KEY="0x..."
+```
+
+The backend uses `backend/app/abi/VeriAgentAnchor.json` at runtime. It does not read `contracts/out/`.
+
+See [docs/05-deployment.md](docs/05-deployment.md) for deployment notes.
 
 ## Development Workflow
 

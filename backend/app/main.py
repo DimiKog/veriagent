@@ -4,8 +4,12 @@ from fastapi import FastAPI, HTTPException
 
 from app.hashing import canonicalize_event, hash_event
 from app.merkle import merkle_proof, verify_inclusion_proof
+from app.anchoring import AnchoringConfigError
+from app.batch_anchoring import BatchNotFoundError, perform_batch_anchor
 from app.models import (
+    AnchorBatchResponse,
     AuditEvent,
+    BatchAnchorRecord,
     BatchProofResponse,
     BatchResponse,
     IngestionReceipt,
@@ -20,9 +24,11 @@ from app.receipts import generate_receipt
 from app.storage import (
     EventAlreadyExistsError,
     NoUnbatchedEventsError,
+    StoredBatchAnchor,
     create_batch_from_unbatched,
     get_audit_event,
     get_batch,
+    get_batch_anchor,
     get_batch_event,
     init_db,
     store_audit_event,
@@ -35,7 +41,7 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title="VeriAgent API", version="0.4.0", lifespan=lifespan)
+app = FastAPI(title="VeriAgent API", version="0.5.0", lifespan=lifespan)
 
 
 @app.get("/health")
@@ -43,8 +49,20 @@ def health():
     return {
         "status": "ok",
         "service": "veriagent",
-        "version": "0.4.0",
+        "version": "0.5.0",
     }
+
+
+def _batch_anchor_record(anchor: StoredBatchAnchor) -> BatchAnchorRecord:
+    return BatchAnchorRecord(
+        batch_id=anchor.batch_id,
+        anchor_address=anchor.anchor_address,
+        tx_hash=anchor.tx_hash,
+        block_number=anchor.block_number,
+        anchored_at=anchor.anchored_at,
+        anchored_by=anchor.anchored_by,
+        chain_id=anchor.chain_id,
+    )
 
 
 @app.post("/audit/hash")
@@ -167,6 +185,34 @@ def get_batch_inclusion_proof(batch_id: str, event_id: str):
         merkle_root=batch.merkle_root,
         proof=proof,
     )
+
+
+@app.post("/audit/batches/{batch_id}/anchor", response_model=AnchorBatchResponse)
+def anchor_batch_on_chain(batch_id: str):
+    try:
+        result = perform_batch_anchor(batch_id)
+    except BatchNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=f"Batch not found: {exc.args[0]}") from exc
+    except AnchoringConfigError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Anchoring is not configured: {exc}",
+        ) from exc
+
+    record = _batch_anchor_record(result.anchor)
+    return AnchorBatchResponse(**record.model_dump(), already_anchored=result.already_anchored)
+
+
+@app.get("/audit/batches/{batch_id}/anchor", response_model=BatchAnchorRecord)
+def get_batch_anchor_record(batch_id: str):
+    anchor = get_batch_anchor(batch_id)
+    if anchor is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Anchor record not found for batch: {batch_id}",
+        )
+
+    return _batch_anchor_record(anchor)
 
 
 @app.get("/audit/batches/{batch_id}", response_model=BatchResponse)

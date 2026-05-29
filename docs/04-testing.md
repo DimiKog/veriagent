@@ -27,6 +27,7 @@ python -m pytest -v
 | `tests/test_batches.py` | Batch creation, retrieval, proof API, and Merkle verify API |
 | `tests/test_api.py` | FastAPI endpoints including receipt responses |
 | `tests/test_anchoring.py` | On-chain anchor helpers (batch id, metadata hash, ABI loading, config) |
+| `tests/test_batch_anchor_api.py` | Batch anchor API with monkeypatched web3 calls (no Anvil required) |
 
 ## Isolation
 
@@ -77,6 +78,18 @@ Anchoring unit tests cover:
 - Missing or invalid anchoring environment variables
 
 The backend test suite does not require `contracts/out/` or a local Foundry build. Refresh `backend/app/abi/VeriAgentAnchor.json` when the Solidity contract ABI changes.
+
+## Batch anchor API tests
+
+Batch anchor API tests use `monkeypatch` on `app.batch_anchoring.anchoring` (and config loading). They do not require a running Anvil node.
+
+Coverage includes:
+
+- `GET /audit/batches/{batch_id}/anchor` returns `404` before anchoring
+- `POST /audit/batches/{batch_id}/anchor` returns `404` for a missing batch
+- Successful anchor stores a `batch_anchors` row when mocks succeed
+- Second `POST` is idempotent (`already_anchored: true`, no second `anchor_batch` call)
+- `GET` returns the stored record after anchoring
 
 ## Manual API checks
 

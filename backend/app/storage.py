@@ -43,6 +43,17 @@ class StoredBatch:
     event_hashes: list[str]
 
 
+@dataclass(frozen=True)
+class StoredBatchAnchor:
+    batch_id: str
+    anchor_address: str
+    tx_hash: str
+    block_number: int
+    anchored_at: int
+    anchored_by: str
+    chain_id: int
+
+
 def resolve_db_path(db_path: Path | str | None = None) -> Path:
     if db_path is not None:
         return Path(db_path)
@@ -92,6 +103,20 @@ def init_db(db_path: Path | str | None = None) -> None:
                 PRIMARY KEY (batch_id, event_id),
                 FOREIGN KEY (batch_id) REFERENCES audit_batches(batch_id),
                 FOREIGN KEY (event_id) REFERENCES audit_events(event_id)
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS batch_anchors (
+                batch_id TEXT PRIMARY KEY,
+                anchor_address TEXT NOT NULL,
+                tx_hash TEXT NOT NULL,
+                block_number INTEGER NOT NULL,
+                anchored_at INTEGER NOT NULL,
+                anchored_by TEXT NOT NULL,
+                chain_id INTEGER NOT NULL,
+                FOREIGN KEY (batch_id) REFERENCES audit_batches(batch_id)
             )
             """
         )
@@ -299,3 +324,86 @@ def get_batch_leaves(batch_id: str, db_path: Path | str | None = None) -> list[B
         )
         for row in rows
     ]
+
+
+def store_batch_anchor(
+    batch_id: str,
+    anchor_address: str,
+    tx_hash: str,
+    block_number: int,
+    anchored_at: int,
+    anchored_by: str,
+    chain_id: int,
+    db_path: Path | str | None = None,
+) -> StoredBatchAnchor:
+    init_db(db_path)
+    with _connect(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO batch_anchors (
+                batch_id,
+                anchor_address,
+                tx_hash,
+                block_number,
+                anchored_at,
+                anchored_by,
+                chain_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                batch_id,
+                anchor_address,
+                tx_hash,
+                block_number,
+                anchored_at,
+                anchored_by,
+                chain_id,
+            ),
+        )
+        conn.commit()
+
+    return StoredBatchAnchor(
+        batch_id=batch_id,
+        anchor_address=anchor_address,
+        tx_hash=tx_hash,
+        block_number=block_number,
+        anchored_at=anchored_at,
+        anchored_by=anchored_by,
+        chain_id=chain_id,
+    )
+
+
+def get_batch_anchor(
+    batch_id: str,
+    db_path: Path | str | None = None,
+) -> StoredBatchAnchor | None:
+    init_db(db_path)
+    with _connect(db_path) as conn:
+        row = conn.execute(
+            """
+            SELECT
+                batch_id,
+                anchor_address,
+                tx_hash,
+                block_number,
+                anchored_at,
+                anchored_by,
+                chain_id
+            FROM batch_anchors
+            WHERE batch_id = ?
+            """,
+            (batch_id,),
+        ).fetchone()
+
+    if row is None:
+        return None
+
+    return StoredBatchAnchor(
+        batch_id=row["batch_id"],
+        anchor_address=row["anchor_address"],
+        tx_hash=row["tx_hash"],
+        block_number=row["block_number"],
+        anchored_at=row["anchored_at"],
+        anchored_by=row["anchored_by"],
+        chain_id=row["chain_id"],
+    )

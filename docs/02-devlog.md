@@ -150,3 +150,33 @@ Implemented:
 Current limitation:
 - Contract can be deployed to a local Anvil node only; no Besu deployment yet.
 - No backend anchoring flow yet.
+
+## 2026-05-29 (Phase 5C)
+
+Decisions:
+- Backend `web3.py` anchoring module only; no FastAPI endpoints, SQLite schema changes, Besu deployment, or frontend changes yet.
+- Configuration from environment variables only; no hardcoded private keys.
+- Backend `batch_id` strings map to on-chain `bytes32` via keccak256 of UTF-8.
+- Batch metadata committed with RFC 8785 / JCS + SHA-256 before anchoring.
+- Committed ABI at `backend/app/abi/VeriAgentAnchor.json` (no `contracts/out/` at runtime).
+
+Implemented:
+- `backend/app/anchoring.py` with `anchor_batch`, `get_onchain_batch`, `is_batch_anchored`, and helpers.
+- `tests/test_anchoring.py`.
+
+## 2026-05-29 (Phase 5D)
+
+Decisions:
+- Anchoring exposed via FastAPI only; no Besu deployment, VM rollout, frontend, auth, or observability yet.
+- SQLite `batch_anchors` stores transaction metadata; on-chain state remains source of truth for anchor fields.
+- `app.batch_anchoring` orchestrates anchoring so tests can monkeypatch `app.anchoring` without Anvil.
+
+Implemented:
+- `batch_anchors` table and `store_batch_anchor` / `get_batch_anchor`.
+- `POST /audit/batches/{batch_id}/anchor` (idempotent) and `GET /audit/batches/{batch_id}/anchor`.
+- `wait_for_transaction_receipt()` in `anchoring.py`.
+- `tests/test_batch_anchor_api.py`.
+- API version `0.5.0`.
+
+Current limitation:
+- Anchoring requires a reachable RPC and configured env vars; Besu and production VM deployment are not documented as supported yet.

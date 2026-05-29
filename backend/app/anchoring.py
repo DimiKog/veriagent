@@ -242,3 +242,16 @@ def is_batch_anchored(
     contract = get_anchor_contract(web3, cfg)
     batch_id_bytes = batch_id_to_bytes32(batch_id)
     return bool(contract.functions.isAnchored(batch_id_bytes).call())
+
+
+def wait_for_transaction_receipt(
+    tx_hash: str,
+    *,
+    config: AnchoringConfig | None = None,
+) -> dict[str, Any]:
+    """Wait for a submitted anchor transaction and return the receipt dict."""
+    cfg = config or load_anchoring_config()
+    web3 = _get_web3(cfg)
+    normalized = tx_hash if tx_hash.startswith("0x") else f"0x{tx_hash}"
+    receipt = web3.eth.wait_for_transaction_receipt(normalized)
+    return dict(receipt)

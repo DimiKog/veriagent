@@ -94,6 +94,39 @@ Returns:
 
 Returns `404 Not Found` when the batch, event, or batch membership is missing.
 
+## POST /audit/batches/{batch_id}/anchor
+
+Anchors a stored local batch on `VeriAgentAnchor` and records the transaction in SQLite.
+
+The backend:
+1. loads the local batch by `batch_id` (`404` if missing),
+2. returns the existing anchor record with `already_anchored: true` if one is already stored,
+3. otherwise computes `metadata_hash` with RFC 8785 / JCS + SHA-256,
+4. submits `anchorBatch` via `web3.py`,
+5. waits for the transaction receipt,
+6. reads on-chain `getBatch` for `anchored_at` and `anchored_by`,
+7. stores `batch_anchors` and returns the record with `already_anchored: false`.
+
+Requires anchoring environment variables (see [05-deployment.md](05-deployment.md)).
+
+Returns:
+- `batch_id`
+- `anchor_address` — deployed `VeriAgentAnchor` contract address
+- `tx_hash`
+- `block_number`
+- `anchored_at` — on-chain Unix timestamp from `getBatch`
+- `anchored_by` — on-chain address that submitted `anchorBatch`
+- `chain_id`
+- `already_anchored`
+
+Returns `503 Service Unavailable` when anchoring configuration is missing or invalid.
+
+## GET /audit/batches/{batch_id}/anchor
+
+Returns the SQLite anchor record for a batch.
+
+Returns `404 Not Found` when no local anchor record exists (anchoring has not been performed or recorded yet).
+
 ## POST /audit/merkle/verify
 
 Verifies that an event hash is included in a Merkle batch root using an inclusion proof.
