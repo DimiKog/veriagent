@@ -64,6 +64,23 @@ The FastAPI backend loads `VeriAgentAnchor` from a committed ABI file at `backen
 
 When you change `contracts/src/VeriAgentAnchor.sol`, rebuild with Foundry and refresh the committed ABI (for example, copy the `abi` array from `contracts/out/VeriAgentAnchor.sol/VeriAgentAnchor.json` into `backend/app/abi/VeriAgentAnchor.json`).
 
+## Besu Edu-Net anchor contract
+
+`VeriAgentAnchor` has been deployed and verified on Besu Edu-Net (Blockscout). Deployment details and verification settings are in [docs/05-deployment.md](docs/05-deployment.md).
+
+To anchor batches from the backend against Besu, configure:
+
+```bash
+export VERIAGENT_RPC_URL="https://..."          # Besu Edu-Net RPC
+export VERIAGENT_CHAIN_ID="..."                 # Besu chain ID
+export VERIAGENT_ANCHOR_CONTRACT_ADDRESS="0x..." # deployed VeriAgentAnchor
+export VERIAGENT_ANCHOR_PRIVATE_KEY="0x..."      # owner key — never commit
+```
+
+Private keys must be supplied only via environment variables or a local `.env` file that is listed in `.gitignore`. Do not commit secrets, `BESU_PRIVATE_KEY`, or deployer keys to the repository.
+
+Backend VM deployment against Besu is the next operational step after local validation. See the devlog Phase 5E entry in [docs/02-devlog.md](docs/02-devlog.md).
+
 ## Local Run
 
 From the project root:

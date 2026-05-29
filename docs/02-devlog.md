@@ -180,3 +180,26 @@ Implemented:
 
 Current limitation:
 - Anchoring requires a reachable RPC and configured env vars; Besu and production VM deployment are not documented as supported yet.
+
+## 2026-05-29 (Phase 5E)
+
+Decisions:
+- Deploy `VeriAgentAnchor` to Hyperledger Besu Edu-Net before backend VM rollout.
+- Compile with `evm_version = "paris"` for Besu compatibility.
+- Enable the Solidity optimizer with `optimizer_runs = 200`.
+- Submit deployment transactions in legacy mode at `1 gwei` gas price.
+- Verify the contract on Blockscout using the same compiler settings as deployment.
+
+Implemented:
+- Besu Edu-Net deployment completed.
+- Foundry `foundry.toml` configured with `evm_version = "paris"`, `optimizer = true`, and `optimizer_runs = 200`.
+- Deployment via `forge script` with `--legacy` and `--with-gas-price 1000000000`.
+- Blockscout contract verification succeeded.
+
+Deployed (placeholders — record actual values in your operator notes):
+- Contract address: `0x30546417E83A0C96bf87BEdfEe59De8FBdf1187A`
+- Deployment transaction: `0x4d093ffe3d81df50a9b19f11cfd5f7fe4c914e3643895b9b92423e0074a2cc59`
+
+Current limitation:
+- Backend VM deployment has not happened yet.
+- Next validation step: backend local testing against Besu Edu-Net (`VERIAGENT_*` env vars pointed at Besu RPC and the deployed contract).
