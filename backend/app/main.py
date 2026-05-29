@@ -3,15 +3,27 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 
 from app.hashing import canonicalize_event, hash_event
+from app.merkle import merkle_proof, verify_inclusion_proof
 from app.models import (
     AuditEvent,
+    BatchResponse,
     IngestionReceipt,
+    MerkleVerifyRequest,
+    MerkleVerifyResponse,
     StoreEventResponse,
     StoredEventResponse,
     VerifyResponse,
 )
 from app.receipts import generate_receipt
-from app.storage import EventAlreadyExistsError, get_audit_event, init_db, store_audit_event
+from app.storage import (
+    EventAlreadyExistsError,
+    NoUnbatchedEventsError,
+    create_batch_from_unbatched,
+    get_audit_event,
+    get_batch,
+    init_db,
+    store_audit_event,
+)
 
 
 @asynccontextmanager
@@ -20,7 +32,7 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title="VeriAgent API", version="0.3.0", lifespan=lifespan)
+app = FastAPI(title="VeriAgent API", version="0.4.0", lifespan=lifespan)
 
 
 @app.get("/health")
@@ -28,7 +40,7 @@ def health():
     return {
         "status": "ok",
         "service": "veriagent",
-        "version": "0.3.0",
+        "version": "0.4.0",
     }
 
 
@@ -103,4 +115,54 @@ def verify_event(event: AuditEvent):
         verified=verified,
         computed_hash=computed_hash,
         stored_hash=stored.event_hash,
+    )
+
+
+@app.post("/audit/batches", response_model=BatchResponse)
+def create_batch():
+    try:
+        batch = create_batch_from_unbatched()
+    except NoUnbatchedEventsError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail="No unbatched events available to create a batch",
+        ) from exc
+
+    return BatchResponse(
+        batch_id=batch.batch_id,
+        merkle_root=batch.merkle_root,
+        event_count=batch.event_count,
+        created_at=batch.created_at,
+        event_hashes=batch.event_hashes,
+    )
+
+
+@app.get("/audit/batches/{batch_id}", response_model=BatchResponse)
+def get_batch_by_id(batch_id: str):
+    batch = get_batch(batch_id)
+    if batch is None:
+        raise HTTPException(status_code=404, detail=f"Batch not found: {batch_id}")
+
+    return BatchResponse(
+        batch_id=batch.batch_id,
+        merkle_root=batch.merkle_root,
+        event_count=batch.event_count,
+        created_at=batch.created_at,
+        event_hashes=batch.event_hashes,
+    )
+
+
+@app.post("/audit/merkle/verify", response_model=MerkleVerifyResponse)
+def verify_merkle_inclusion(request: MerkleVerifyRequest):
+    proof_steps = [(step.sibling, step.side) for step in request.proof]
+    verified = verify_inclusion_proof(
+        event_hash=request.event_hash,
+        merkle_root=request.merkle_root,
+        proof=proof_steps,
+    )
+
+    return MerkleVerifyResponse(
+        event_hash=request.event_hash,
+        merkle_root=request.merkle_root,
+        verified=verified,
     )

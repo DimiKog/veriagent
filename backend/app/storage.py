@@ -1,8 +1,11 @@
 import os
 import sqlite3
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+
+from app.merkle import merkle_root, normalize_leaves
 
 DEFAULT_DB_PATH = Path(__file__).resolve().parent.parent / "data" / "veriagent.db"
 DB_PATH_ENV = "VERIAGENT_DB_PATH"
@@ -12,12 +15,32 @@ class EventAlreadyExistsError(Exception):
     pass
 
 
+class NoUnbatchedEventsError(Exception):
+    pass
+
+
 @dataclass(frozen=True)
 class StoredAuditEvent:
     event_id: str
     canonical_event_json: str
     event_hash: str
     created_at: str
+
+
+@dataclass(frozen=True)
+class BatchLeaf:
+    event_id: str
+    event_hash: str
+    leaf_index: int
+
+
+@dataclass(frozen=True)
+class StoredBatch:
+    batch_id: str
+    merkle_root: str
+    event_count: int
+    created_at: str
+    event_hashes: list[str]
 
 
 def resolve_db_path(db_path: Path | str | None = None) -> Path:
@@ -46,6 +69,29 @@ def init_db(db_path: Path | str | None = None) -> None:
                 canonical_event_json TEXT NOT NULL,
                 event_hash TEXT NOT NULL,
                 created_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS audit_batches (
+                batch_id TEXT PRIMARY KEY,
+                merkle_root TEXT NOT NULL,
+                event_count INTEGER NOT NULL,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS batch_events (
+                batch_id TEXT NOT NULL,
+                event_id TEXT NOT NULL,
+                event_hash TEXT NOT NULL,
+                leaf_index INTEGER NOT NULL,
+                PRIMARY KEY (batch_id, event_id),
+                FOREIGN KEY (batch_id) REFERENCES audit_batches(batch_id),
+                FOREIGN KEY (event_id) REFERENCES audit_events(event_id)
             )
             """
         )
@@ -106,3 +152,124 @@ def get_audit_event(
         event_hash=row["event_hash"],
         created_at=row["created_at"],
     )
+
+
+def list_unbatched_events(db_path: Path | str | None = None) -> list[StoredAuditEvent]:
+    init_db(db_path)
+    with _connect(db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT e.event_id, e.canonical_event_json, e.event_hash, e.created_at
+            FROM audit_events e
+            LEFT JOIN batch_events b ON e.event_id = b.event_id
+            WHERE b.event_id IS NULL
+            ORDER BY e.created_at ASC, e.event_id ASC
+            """
+        ).fetchall()
+
+    return [
+        StoredAuditEvent(
+            event_id=row["event_id"],
+            canonical_event_json=row["canonical_event_json"],
+            event_hash=row["event_hash"],
+            created_at=row["created_at"],
+        )
+        for row in rows
+    ]
+
+
+def create_batch_from_unbatched(db_path: Path | str | None = None) -> StoredBatch:
+    events = list_unbatched_events(db_path)
+    if not events:
+        raise NoUnbatchedEventsError()
+
+    hash_to_event = {event.event_hash: event for event in events}
+    leaves = normalize_leaves([event.event_hash for event in events])
+    root = merkle_root(leaves)
+
+    batch_id = str(uuid.uuid4())
+    created_at = datetime.now(timezone.utc).isoformat()
+    init_db(db_path)
+
+    with _connect(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO audit_batches (batch_id, merkle_root, event_count, created_at)
+            VALUES (?, ?, ?, ?)
+            """,
+            (batch_id, root, len(leaves), created_at),
+        )
+        for leaf_index, event_hash in enumerate(leaves):
+            event = hash_to_event[event_hash]
+            conn.execute(
+                """
+                INSERT INTO batch_events (batch_id, event_id, event_hash, leaf_index)
+                VALUES (?, ?, ?, ?)
+                """,
+                (batch_id, event.event_id, event_hash, leaf_index),
+            )
+        conn.commit()
+
+    return StoredBatch(
+        batch_id=batch_id,
+        merkle_root=root,
+        event_count=len(leaves),
+        created_at=created_at,
+        event_hashes=leaves,
+    )
+
+
+def get_batch(batch_id: str, db_path: Path | str | None = None) -> StoredBatch | None:
+    init_db(db_path)
+    with _connect(db_path) as conn:
+        row = conn.execute(
+            """
+            SELECT batch_id, merkle_root, event_count, created_at
+            FROM audit_batches
+            WHERE batch_id = ?
+            """,
+            (batch_id,),
+        ).fetchone()
+        if row is None:
+            return None
+
+        leaf_rows = conn.execute(
+            """
+            SELECT event_hash
+            FROM batch_events
+            WHERE batch_id = ?
+            ORDER BY leaf_index ASC
+            """,
+            (batch_id,),
+        ).fetchall()
+
+    return StoredBatch(
+        batch_id=row["batch_id"],
+        merkle_root=row["merkle_root"],
+        event_count=row["event_count"],
+        created_at=row["created_at"],
+        event_hashes=[leaf["event_hash"] for leaf in leaf_rows],
+    )
+
+
+def get_batch_leaves(batch_id: str, db_path: Path | str | None = None) -> list[BatchLeaf]:
+    init_db(db_path)
+    with _connect(db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT event_id, event_hash, leaf_index
+            FROM batch_events
+            WHERE batch_id = ?
+            ORDER BY leaf_index ASC
+            """,
+            (batch_id,),
+        ).fetchall()
+
+    return [
+        BatchLeaf(
+            event_id=row["event_id"],
+            event_hash=row["event_hash"],
+            leaf_index=row["leaf_index"],
+        )
+        for row in rows
+    ]

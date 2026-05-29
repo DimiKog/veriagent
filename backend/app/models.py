@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -46,3 +46,28 @@ class VerifyResponse(BaseModel):
     stored_hash: str | None = None
     canonicalization: str = "RFC8785-JCS"
     hash_algorithm: str = "SHA-256"
+
+
+class MerkleProofStep(BaseModel):
+    sibling: str
+    side: Literal["left", "right"]
+
+
+class MerkleVerifyRequest(BaseModel):
+    event_hash: str
+    merkle_root: str
+    proof: list[MerkleProofStep]
+
+
+class MerkleVerifyResponse(BaseModel):
+    event_hash: str
+    merkle_root: str
+    verified: bool
+
+
+class BatchResponse(BaseModel):
+    batch_id: str
+    merkle_root: str
+    event_count: int
+    created_at: str
+    event_hashes: list[str] = Field(default_factory=list)

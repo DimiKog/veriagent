@@ -54,3 +54,43 @@ Tested:
 Current limitation:
 - Events are stored in mutable SQLite before later Merkle anchoring.
 - Integrity guarantees are local and post-storage only at this stage.
+
+## 2026-05-28 (Phase 3)
+
+Decisions:
+- Ingestion receipts prove the service accepted a specific commitment at store time.
+- HMAC-SHA256 with a server secret is sufficient for MVP; no asymmetric keys yet.
+- `VERIAGENT_RECEIPT_SECRET` is required for non-development deployments.
+- A clearly marked development fallback secret is used only when the env var is unset.
+
+Implemented:
+- `receipts.py` with receipt generation and `verify_receipt`.
+- `POST /audit/events` returns `event_id`, `event_hash`, `created_at`, and signed `receipt`.
+- Pytest coverage for receipt signing, verification, and API receipt responses.
+
+Tested:
+- Deterministic receipt signatures.
+- Valid and tampered receipt verification.
+- Secret mismatch rejection.
+- Development fallback secret behavior.
+
+## 2026-05-28 (Phase 4)
+
+Decisions:
+- Local Merkle batching only; no blockchain anchoring yet.
+- Leaves are stored event hashes; internal nodes use SHA-256 over concatenated leaf bytes.
+- Odd leaf counts duplicate the last leaf before pairing.
+- Leaves are sorted lexicographically so batch roots are deterministic.
+- Each batch includes only events not yet assigned to a prior batch.
+
+Implemented:
+- `merkle.py` with root computation, inclusion proof generation, and verification.
+- SQLite tables `audit_batches` and `batch_events`.
+- `POST /audit/batches`, `GET /audit/batches/{batch_id}`, `POST /audit/merkle/verify`.
+- Pytest coverage for Merkle trees and batch API flows.
+
+Tested:
+- Single-leaf, two-leaf, and odd-leaf Merkle roots.
+- Proof generation and verification.
+- Tampered proof rejection.
+- Batch creation, retrieval, and incremental batching of new events.
