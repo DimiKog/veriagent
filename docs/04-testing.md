@@ -24,7 +24,7 @@ python -m pytest -v
 | `tests/test_storage.py` | SQLite storage, duplicate detection, retrieval |
 | `tests/test_receipts.py` | HMAC-SHA256 ingestion receipt signing and verification |
 | `tests/test_merkle.py` | Merkle root, inclusion proof generation, and verification |
-| `tests/test_batches.py` | Batch creation, retrieval, and Merkle verify API |
+| `tests/test_batches.py` | Batch creation, retrieval, proof API, and Merkle verify API |
 | `tests/test_api.py` | FastAPI endpoints including receipt responses |
 
 ## Isolation
@@ -63,6 +63,8 @@ Batch API tests cover:
 - Creating and retrieving batches
 - Batching only newly stored events on subsequent runs
 - `POST /audit/merkle/verify` with valid and tampered proofs
+- `GET /audit/batches/{batch_id}/proof/{event_id}` for included, missing, and not-in-batch cases
+- Proof responses verifying successfully via `POST /audit/merkle/verify`
 
 ## Manual API checks
 

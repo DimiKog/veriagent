@@ -6,8 +6,10 @@ from app.hashing import canonicalize_event, hash_event
 from app.merkle import merkle_proof, verify_inclusion_proof
 from app.models import (
     AuditEvent,
+    BatchProofResponse,
     BatchResponse,
     IngestionReceipt,
+    MerkleProofStep,
     MerkleVerifyRequest,
     MerkleVerifyResponse,
     StoreEventResponse,
@@ -21,6 +23,7 @@ from app.storage import (
     create_batch_from_unbatched,
     get_audit_event,
     get_batch,
+    get_batch_event,
     init_db,
     store_audit_event,
 )
@@ -134,6 +137,35 @@ def create_batch():
         event_count=batch.event_count,
         created_at=batch.created_at,
         event_hashes=batch.event_hashes,
+    )
+
+
+@app.get("/audit/batches/{batch_id}/proof/{event_id}", response_model=BatchProofResponse)
+def get_batch_inclusion_proof(batch_id: str, event_id: str):
+    batch = get_batch(batch_id)
+    if batch is None:
+        raise HTTPException(status_code=404, detail=f"Batch not found: {batch_id}")
+
+    stored = get_audit_event(event_id)
+    if stored is None:
+        raise HTTPException(status_code=404, detail=f"Event not found: {event_id}")
+
+    membership = get_batch_event(batch_id, event_id)
+    if membership is None or stored.event_hash not in batch.event_hashes:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Event not included in batch: {event_id}",
+        )
+
+    proof_steps = merkle_proof(batch.event_hashes, stored.event_hash)
+    proof = [MerkleProofStep(sibling=sibling, side=side) for sibling, side in proof_steps]
+
+    return BatchProofResponse(
+        batch_id=batch.batch_id,
+        event_id=stored.event_id,
+        event_hash=stored.event_hash,
+        merkle_root=batch.merkle_root,
+        proof=proof,
     )
 
 

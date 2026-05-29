@@ -75,6 +75,25 @@ Retrieves stored batch metadata.
 
 Missing batches return `404 Not Found`.
 
+## GET /audit/batches/{batch_id}/proof/{event_id}
+
+Returns a Merkle inclusion proof for a stored event in a batch.
+
+The backend:
+1. loads the batch by `batch_id`,
+2. loads the stored event by `event_id`,
+3. checks that the event is included in the batch,
+4. generates a proof with `merkle_proof(batch.event_hashes, event_hash)`.
+
+Returns:
+- `batch_id`
+- `event_id`
+- `event_hash`
+- `merkle_root`
+- `proof` — ordered list of `{ "sibling": "...", "side": "left" | "right" }` steps
+
+Returns `404 Not Found` when the batch, event, or batch membership is missing.
+
 ## POST /audit/merkle/verify
 
 Verifies that an event hash is included in a Merkle batch root using an inclusion proof.

@@ -252,6 +252,32 @@ def get_batch(batch_id: str, db_path: Path | str | None = None) -> StoredBatch |
     )
 
 
+def get_batch_event(
+    batch_id: str,
+    event_id: str,
+    db_path: Path | str | None = None,
+) -> BatchLeaf | None:
+    init_db(db_path)
+    with _connect(db_path) as conn:
+        row = conn.execute(
+            """
+            SELECT event_id, event_hash, leaf_index
+            FROM batch_events
+            WHERE batch_id = ? AND event_id = ?
+            """,
+            (batch_id, event_id),
+        ).fetchone()
+
+    if row is None:
+        return None
+
+    return BatchLeaf(
+        event_id=row["event_id"],
+        event_hash=row["event_hash"],
+        leaf_index=row["leaf_index"],
+    )
+
+
 def get_batch_leaves(batch_id: str, db_path: Path | str | None = None) -> list[BatchLeaf]:
     init_db(db_path)
     with _connect(db_path) as conn:

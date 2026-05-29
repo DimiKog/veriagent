@@ -17,7 +17,8 @@ VeriAgent currently supports:
 - Verification of submitted events against stored commitments
 - Tamper detection
 - HMAC-SHA256 signed ingestion receipts on event storage
-- Local Merkle batching over stored event hashes with inclusion proofs
+- Local Merkle batching over stored event hashes
+- API-generated Merkle inclusion proofs for stored batch events
 
 See [docs/03-api.md](docs/03-api.md) for endpoint details and [docs/04-testing.md](docs/04-testing.md) for the test guide.
 
@@ -51,7 +52,8 @@ http://127.0.0.1:8000/docs
 4. Verify the same event using `POST /audit/verify`.
 5. Modify one field, such as `output_hash`, and verify again.
 6. Create a Merkle batch with `POST /audit/batches`.
-7. Verify inclusion with `POST /audit/merkle/verify` using the batch root and proof.
+7. Generate an inclusion proof using `GET /audit/batches/{batch_id}/proof/{event_id}`.
+8. Verify inclusion with `POST /audit/merkle/verify` using the returned batch root and proof.
 
 Expected result:
 

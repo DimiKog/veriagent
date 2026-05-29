@@ -71,3 +71,11 @@ class BatchResponse(BaseModel):
     event_count: int
     created_at: str
     event_hashes: list[str] = Field(default_factory=list)
+
+
+class BatchProofResponse(BaseModel):
+    batch_id: str
+    event_id: str
+    event_hash: str
+    merkle_root: str
+    proof: list[MerkleProofStep]
