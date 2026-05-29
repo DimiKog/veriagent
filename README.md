@@ -57,6 +57,12 @@ forge script script/DeployVeriAgentAnchor.s.sol:DeployVeriAgentAnchor \
 
 The script prints the deployed contract address and owner. Deployment artifacts are written under `contracts/broadcast/` (gitignored).
 
+## Backend contract ABI
+
+The FastAPI backend loads `VeriAgentAnchor` from a committed ABI file at `backend/app/abi/VeriAgentAnchor.json`. Runtime does **not** read `contracts/out/`; a backend-only VM does not need Foundry installed.
+
+When you change `contracts/src/VeriAgentAnchor.sol`, rebuild with Foundry and refresh the committed ABI (for example, copy the `abi` array from `contracts/out/VeriAgentAnchor.sol/VeriAgentAnchor.json` into `backend/app/abi/VeriAgentAnchor.json`).
+
 ## Local Run
 
 From the project root:
@@ -70,6 +76,8 @@ export VERIAGENT_RECEIPT_SECRET="replace-with-a-long-random-secret"
 python -m pytest
 uvicorn app.main:app --reload
 ```
+
+Backend tests and anchoring use `backend/app/abi/VeriAgentAnchor.json` only; no `forge build` is required on the backend VM.
 
 For local-only runs you may omit `VERIAGENT_RECEIPT_SECRET`; the backend uses a clearly marked development fallback secret.
 

@@ -1,0 +1,8 @@
+{
+  "include": ["backend/app", "backend/tests"],
+  "exclude": ["backend/.venv", "contracts", "**/__pycache__"],
+  "venvPath": "backend",
+  "venv": ".venv",
+  "stubPath": "backend/typings",
+  "pythonVersion": "3.12"
+}

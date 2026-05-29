@@ -26,6 +26,7 @@ python -m pytest -v
 | `tests/test_merkle.py` | Merkle root, inclusion proof generation, and verification |
 | `tests/test_batches.py` | Batch creation, retrieval, proof API, and Merkle verify API |
 | `tests/test_api.py` | FastAPI endpoints including receipt responses |
+| `tests/test_anchoring.py` | On-chain anchor helpers (batch id, metadata hash, ABI loading, config) |
 
 ## Isolation
 
@@ -65,6 +66,17 @@ Batch API tests cover:
 - `POST /audit/merkle/verify` with valid and tampered proofs
 - `GET /audit/batches/{batch_id}/proof/{event_id}` for included, missing, and not-in-batch cases
 - Proof responses verifying successfully via `POST /audit/merkle/verify`
+
+## Anchoring tests
+
+Anchoring unit tests cover:
+
+- Deterministic `batch_id` and batch metadata hashing
+- Loading `VeriAgentAnchor` ABI from `backend/app/abi/VeriAgentAnchor.json` (committed JSON array)
+- Optional Foundry-style artifact compatibility (`{"abi": [...]}`)
+- Missing or invalid anchoring environment variables
+
+The backend test suite does not require `contracts/out/` or a local Foundry build. Refresh `backend/app/abi/VeriAgentAnchor.json` when the Solidity contract ABI changes.
 
 ## Manual API checks
 
