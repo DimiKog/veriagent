@@ -94,3 +94,45 @@ Tested:
 - Proof generation and verification.
 - Tampered proof rejection.
 - Batch creation, retrieval, and incremental batching of new events.
+
+## 2026-05-29
+
+Completed Phase 4 Merkle proof retrieval API.
+
+Implemented:
+- `GET /audit/batches/{batch_id}/proof/{event_id}` for API-generated inclusion proofs.
+- Pytest coverage for included, missing, and not-in-batch proof cases.
+
+Tested:
+- Proof generation for events included in a batch.
+- `404 Not Found` for missing batches and events.
+- `400 Bad Request` when the event is not part of the batch.
+
+## 2026-05-29 (Phase 5A)
+
+Decisions:
+- Solidity anchor contract only; no backend `web3.py` integration, Besu deployment, frontend changes, or blockchain API endpoints yet.
+- Foundry project lives under `contracts/` with Solc `0.8.20`.
+- On-chain anchors store `batchId`, Merkle root, event count, metadata hash, timestamp, and anchoring address.
+- Owner-gated `anchorBatch`; custom errors instead of string reverts.
+- Duplicate batch IDs rejected when `anchoredAt` is already set.
+
+Implemented:
+- Foundry layout: `foundry.toml`, `src/VeriAgentAnchor.sol`, `test/VeriAgentAnchor.t.sol`.
+- `forge-std` dependency under `contracts/lib/forge-std`.
+- `VeriAgentAnchor` with `BatchAnchor` struct, `mapping(bytes32 => BatchAnchor)`, and `anchorBatch` / `getBatch` / `isAnchored`.
+- `onlyOwner`, `transferOwnership`, and `OwnershipTransferred` / `BatchAnchored` events.
+- `.gitignore` entries for `contracts/out/`, `contracts/cache/`, and `contracts/broadcast/`.
+
+Tested (Foundry, 14 tests):
+- Deployer is initial owner.
+- Owner can anchor; non-owner cannot.
+- Rejection of zero `batchId`, Merkle root, metadata hash, and event count.
+- Duplicate batch rejection.
+- `getBatch` returns stored anchor fields.
+- `isAnchored` false before anchor and true after.
+- Ownership transfer to a new owner; old owner cannot anchor; new owner can.
+- `transferOwnership` rejects zero address.
+
+Current limitation:
+- Anchors exist only in the local Foundry project; no chain deployment or backend anchoring flow yet.
