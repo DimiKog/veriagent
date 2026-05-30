@@ -2,7 +2,7 @@
 
 VeriAgent is developed locally first. This guide covers backend and contract deployment targets available today.
 
-`VeriAgentAnchor` has been deployed and verified on Besu Edu-Net. Backend production VM rollout and Besu end-to-end anchoring validation are still in progress.
+`VeriAgentAnchor` is deployed and verified on Besu Edu-Net. The public API runs at `https://veriagent.dimikog.org` and the dashboard at `https://dimikog.github.io/veriagent/`. Besu end-to-end anchoring from the production backend should be validated in your operator environment before treating anchoring as production-ready.
 
 ## Backend-only deployment (no Foundry)
 
@@ -75,10 +75,10 @@ You can still pass `--rpc-url "$BESU_RPC_URL"` directly if you prefer not to use
 - `--legacy` — legacy transaction type required for this Besu network configuration.
 - `--with-gas-price 1000000000` — `1 gwei`.
 
-After broadcast, note the deployed contract address (placeholder until recorded):
+Recorded Besu Edu-Net deployment (also in [docs/02-devlog.md](02-devlog.md)):
 
 ```text
-VERIAGENT_ANCHOR_CONTRACT_ADDRESS=0x...
+VERIAGENT_ANCHOR_CONTRACT_ADDRESS=0x30546417E83A0C96bf87BEdfEe59De8FBdf1187A
 ```
 
 ### Blockscout verification
@@ -94,6 +94,16 @@ Verify `VeriAgentAnchor` on Blockscout with settings that match the deployment a
 | Constructor arguments | none |
 
 Verification for the Besu Edu-Net deployment completed successfully.
+
+### Block explorer (Blockscout)
+
+| Resource | URL |
+|----------|-----|
+| Explorer home | `https://blockexplorer.dimikog.org/` |
+| Contract | `https://blockexplorer.dimikog.org/address/0x30546417E83A0C96bf87BEdfEe59De8FBdf1187A` |
+| Transaction | `https://blockexplorer.dimikog.org/tx/{tx_hash}` |
+
+The GitHub Pages dashboard links to transactions via `BLOCKSCOUT_TX_BASE` in `frontend/src/api/client.ts` (currently `https://blockexplorer.dimikog.org/tx/`). The link is hidden while that constant still contains `example`.
 
 ## Backend anchoring configuration
 
@@ -177,16 +187,21 @@ With the Besu contract live and verified:
 
 1. Point local backend anchoring env vars at Besu (`VERIAGENT_RPC_URL`, `VERIAGENT_CHAIN_ID`, `VERIAGENT_ANCHOR_CONTRACT_ADDRESS`, `VERIAGENT_ANCHOR_PRIVATE_KEY`).
 2. Run the usual audit batch flow locally.
-3. Call `POST /audit/batches/{batch_id}/anchor` and confirm the transaction on Blockscout.
+3. Call `POST /audit/batches/{batch_id}/anchor` and confirm the transaction on the [block explorer](https://blockexplorer.dimikog.org/).
 4. Confirm `GET /audit/batches/{batch_id}/anchor` returns the stored SQLite record.
+5. Optional: run the same flow from the [public dashboard](https://dimikog.github.io/veriagent/) and use **View on Blockscout** in the workflow sidebar.
 
-Backend VM deployment is not done yet; validate locally before promoting to the VM.
+Validate locally before changing production anchoring keys or contract addresses on the VM.
 
-## What is not deployed yet
+## Dashboard (GitHub Pages)
 
-- Backend production VM deployment
-- Production VM automation for VeriAgent
-- Frontend integration for anchor status
+- Workflow UI: `https://dimikog.github.io/veriagent/`
+- Deploy: push to `master` → [`.github/workflows/deploy-frontend.yml`](../.github/workflows/deploy-frontend.yml)
+- Setup: [frontend/README.md](../frontend/README.md)
+
+## What is not in scope yet
+
+- Production VM automation / IaC for VeriAgent
 - DID/VC, ZKP, authentication, and OpenTelemetry
 
 Update `backend/app/abi/VeriAgentAnchor.json` when the Solidity contract ABI changes, then redeploy the contract and point `VERIAGENT_ANCHOR_CONTRACT_ADDRESS` at the new deployment.

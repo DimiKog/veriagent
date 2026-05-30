@@ -196,10 +196,22 @@ Implemented:
 - Deployment via `forge script` with `--legacy` and `--with-gas-price 1000000000`.
 - Blockscout contract verification succeeded.
 
-Deployed (placeholders — record actual values in your operator notes):
+Deployed on Besu Edu-Net:
 - Contract address: `0x30546417E83A0C96bf87BEdfEe59De8FBdf1187A`
 - Deployment transaction: `0x4d093ffe3d81df50a9b19f11cfd5f7fe4c914e3643895b9b92423e0074a2cc59`
+- Block explorer: `https://blockexplorer.dimikog.org/`
 
-Current limitation:
-- Backend VM deployment has not happened yet.
+Current limitation (at time of Phase 5E):
+- Backend VM deployment had not happened yet.
 - Next validation step: backend local testing against Besu Edu-Net (`VERIAGENT_*` env vars pointed at Besu RPC and the deployed contract).
+
+## 2026-05-30
+
+Decisions:
+- Keep Blockscout transaction links in the frontend only (no explorer URL in backend env).
+- Hide the explorer link in the dashboard while `BLOCKSCOUT_TX_BASE` contains a placeholder hostname.
+
+Implemented:
+- Public dashboard UI refresh (design tokens, dark mode, numbered workflow steps, hash copy buttons).
+- Live block explorer base: `https://blockexplorer.dimikog.org/tx/` in `frontend/src/api/client.ts`.
+- README and deployment docs updated with explorer URLs and recorded contract address.

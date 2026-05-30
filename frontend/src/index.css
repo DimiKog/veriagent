@@ -1,3 +1,55 @@
+/* ── Design tokens ───────────────────────────────────── */
+:root {
+  --va-bg: #f4f6f9;
+  --va-surface: #ffffff;
+  --va-border: #e2e6ed;
+  --va-text: #1a1a2e;
+  --va-text-muted: #4b5563;
+  --va-text-faint: #9ca3af;
+  --va-primary: #2563eb;
+  --va-primary-hover: #1d4ed8;
+  --va-primary-ring: #93c5fd;
+  --va-primary-bg: #eff6ff;
+  --va-primary-border: #bfdbfe;
+  --va-primary-text: #1d4ed8;
+  --va-success-bg: #ecfdf5;
+  --va-success-border: #a7f3d0;
+  --va-success-text: #047857;
+  --va-error-bg: #fef2f2;
+  --va-error-border: #fecaca;
+  --va-error-text: #b91c1c;
+  --va-code-bg: rgba(0, 0, 0, 0.04);
+  --va-shadow: 0 1px 2px rgb(16 24 40 / 4%);
+  --va-input-bg: #ffffff;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --va-bg: #0f1117;
+    --va-surface: #1a1d27;
+    --va-border: #2a2f45;
+    --va-text: #e8eaf0;
+    --va-text-muted: #9ca3af;
+    --va-text-faint: #6b7280;
+    --va-primary: #3b82f6;
+    --va-primary-hover: #60a5fa;
+    --va-primary-ring: #1d4ed8;
+    --va-primary-bg: #172554;
+    --va-primary-border: #1d4ed8;
+    --va-primary-text: #93c5fd;
+    --va-success-bg: #052e16;
+    --va-success-border: #14532d;
+    --va-success-text: #86efac;
+    --va-error-bg: #450a0a;
+    --va-error-border: #7f1d1d;
+    --va-error-text: #fca5a5;
+    --va-code-bg: rgba(255, 255, 255, 0.06);
+    --va-shadow: 0 1px 3px rgb(0 0 0 / 40%);
+    --va-input-bg: #0f1117;
+  }
+}
+
+/* ── Reset ───────────────────────────────────────────── */
 *,
 *::before,
 *::after {
@@ -7,12 +59,11 @@
 body {
   margin: 0;
   min-height: 100vh;
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
-    sans-serif;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   font-size: 15px;
   line-height: 1.5;
-  color: #1a1a2e;
-  background: #f4f6f9;
+  color: var(--va-text);
+  background: var(--va-bg);
   -webkit-font-smoothing: antialiased;
 }
 
@@ -28,4 +79,6 @@ button {
 input,
 textarea {
   font: inherit;
+  color: var(--va-text);
+  background: var(--va-input-bg);
 }

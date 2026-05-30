@@ -113,7 +113,9 @@ Use the sections in order for a full end-to-end demo:
 5. **Anchor batch** — submit the batch root on chain via the backend.
 6. **Show anchor result** — read the stored anchor record (`tx_hash`, `chain_id`, etc.).
 
-The **Current workflow state** panel tracks the latest IDs and hashes across steps. When a transaction hash is present, a Blockscout link is shown (placeholder URL until the real explorer base is configured in `src/api/client.ts`).
+The **Current workflow state** sidebar tracks the latest IDs and hashes across steps. Long values are truncated with a **copy** button (full value on hover). When a transaction hash is present and Blockscout is configured, a **View on Blockscout** link appears.
+
+The dashboard uses CSS design tokens and follows the system **dark mode** preference (`prefers-color-scheme`). Workflow panels are numbered steps 1–6 in the main column.
 
 ## API helper
 
@@ -123,15 +125,27 @@ Reusable fetch wrappers live in `src/api/client.ts`. They:
 - parse FastAPI error `detail` fields into readable messages
 - expose typed helpers for each audit endpoint used by the dashboard
 
-## Changing the API base URL
+## Configuration (`src/api/client.ts`)
 
-Edit `API_BASE_URL` in `src/api/client.ts` if you need to point at a local backend during development, for example:
+### API base URL
+
+Edit `API_BASE_URL` if you need to point at a local backend during development, for example:
 
 ```typescript
 export const API_BASE_URL = 'http://127.0.0.1:8000'
 ```
 
-When doing so, ensure the backend allows browser requests from your dev origin (CORS), or use the Vite dev-server proxy if you add one.
+When doing so, ensure the backend allows browser requests from your dev origin (CORS), or use the Vite dev-server proxy.
+
+### Blockscout transaction link
+
+`BLOCKSCOUT_TX_BASE` is the transaction URL prefix (must end with `/tx/`). It is currently:
+
+```text
+https://blockexplorer.dimikog.org/tx/
+```
+
+While the value contains `example`, `BLOCKSCOUT_CONFIGURED` is `false` and the UI hides the explorer link. With a live base URL, **View on Blockscout** appears in the workflow sidebar when `tx_hash` is set.
 
 ## Lint
 

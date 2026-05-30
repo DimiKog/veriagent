@@ -104,3 +104,17 @@ For production-like runs, set a strong secret:
 ```bash
 export VERIAGENT_RECEIPT_SECRET="replace-with-a-long-random-secret"
 ```
+
+## Dashboard end-to-end check
+
+With the [public dashboard](https://dimikog.github.io/veriagent/) and API at `https://veriagent.dimikog.org`:
+
+1. **API health check** — expect a healthy response with API version.
+2. **Create audit event** — confirm `event_id` and `event_hash` appear in the workflow sidebar.
+3. **Create Merkle batch** — confirm `batch_id` and `merkle_root`.
+4. **Retrieve Merkle proof** — confirm verification succeeds in the status panel.
+5. **Anchor batch** — requires production backend Besu anchoring env vars; confirm `tx_hash` in the sidebar.
+6. **Show anchor result** — confirm stored anchor metadata matches step 5.
+7. After anchoring, open **View on Blockscout** (links to `https://blockexplorer.dimikog.org/tx/{hash}`).
+
+Local dashboard dev: [frontend/README.md](../frontend/README.md).

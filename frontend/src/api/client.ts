@@ -19,9 +19,10 @@ export const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ??
   (import.meta.env.DEV ? DEV_API_BASE_URL : PRODUCTION_API_BASE_URL)
 
-// TODO: Replace with the real Besu Edu-Net Blockscout base URL when available.
-export const BLOCKSCOUT_TX_BASE =
-  'https://edu-chain-testnet-blockscout.example/tx/'
+export const BLOCKSCOUT_TX_BASE = 'https://blockexplorer.dimikog.org/tx/'
+
+/** False while BLOCKSCOUT_TX_BASE is still a placeholder — hides the link in the UI. */
+export const BLOCKSCOUT_CONFIGURED = !BLOCKSCOUT_TX_BASE.includes('example')
 
 export class ApiError extends Error {
   status: number
