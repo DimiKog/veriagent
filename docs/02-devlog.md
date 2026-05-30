@@ -31,29 +31,6 @@ Implemented:
 - `POST /audit/events`, `GET /audit/events/{event_id}`, `POST /audit/verify`.
 - Pytest coverage for storage and verification API flows.
 
-## 2026-05-28
-
-Completed VeriAgent Phase 2 local storage and verification.
-
-Implemented:
-- SQLite-backed audit event storage.
-- `POST /audit/events` for storing canonicalized audit events.
-- `GET /audit/events/{event_id}` for retrieving stored event commitments.
-- `POST /audit/verify` for recomputing and comparing event hashes.
-- Duplicate event detection using `event_id`.
-- Isolated test database setup using `VERIAGENT_DB_PATH`.
-
-Tested:
-- Event storage.
-- Event retrieval.
-- Valid event verification.
-- Tampered event detection.
-- Duplicate event rejection.
-- Missing event handling.
-
-Current limitation:
-- Events are stored in mutable SQLite before later Merkle anchoring.
-- Integrity guarantees are local and post-storage only at this stage.
 
 ## 2026-05-28 (Phase 3)
 
@@ -216,3 +193,47 @@ Implemented:
 - Live block explorer base: `https://blockexplorer.dimikog.org/tx/` in `frontend/src/api/client.ts`.
 - README and deployment docs updated with explorer URLs and recorded contract address.
 - API and dashboard display version bumped to `0.7.0` (public demo v0.7).
+
+## 2026-05-30 (v0.7.0 / v0.7.1 — Public deployment)
+
+Decisions:
+- Treat the GitHub Pages dashboard + VM API + Besu anchoring as the public demo surface (v0.7).
+- Keep Blockscout/explorer links in the frontend; anchoring keys and receipts stay server-side only.
+- Use FastAPI CORS allowlist for `https://dimikog.github.io` rather than `allow_origins=["*"]`.
+- Publish the frontend via GitHub Actions to the `gh-pages` branch (not `master` root).
+
+Implemented:
+- **Backend (production VM):** FastAPI under **systemd**; **Nginx** reverse proxy to uvicorn; **HTTPS** at `https://veriagent.dimikog.org` (health, Swagger `/docs`, audit API).
+- **Frontend (GitHub Pages):** Dashboard deployed at `https://dimikog.github.io/veriagent/` (Vite `base` `/veriagent/`; workflow `.github/workflows/deploy-frontend.yml`).
+- **CORS:** Fixed for GitHub Pages origin so the browser dashboard can call the production API.
+- **Frontend redesign:** Completed (numbered workflow, workflow sidebar, hash copy, dark mode, explorer link when `tx_hash` is set).
+- **Anchor metadata parsing:** Fixed so `anchored_at` and `anchored_by` are stored correctly in `batch_anchors` after on-chain anchor.
+- **API version:** `0.7.0` on `/health` and OpenAPI metadata; dashboard badge aligned.
+- **Documentation:** [docs/05-deployment.md](05-deployment.md) expanded with topology, release checklist, and Pages troubleshooting.
+
+Public endpoints (verified):
+
+| Resource | URL |
+|----------|-----|
+| API | `https://veriagent.dimikog.org` |
+| API docs | `https://veriagent.dimikog.org/docs` |
+| Dashboard | `https://dimikog.github.io/veriagent/` |
+| Block explorer | `https://blockexplorer.dimikog.org/` |
+| Contract | `0x30546417E83A0C96bf87BEdfEe59De8FBdf1187A` (Besu Edu-Net) |
+
+Public end-to-end demo verified:
+
+```text
+audit event → ingestion receipt → Merkle batch → inclusion proof
+  → Besu anchor (VeriAgentAnchor) → transaction visible on Blockscout
+```
+
+Operator flow exercised via the dashboard and API: store event, batch, proof/verify, anchor batch, confirm `tx_hash` on `https://blockexplorer.dimikog.org/tx/{hash}`.
+
+Current limitation:
+- No authentication or agent identity layer on the public API.
+- SQLite backup and restore strategy not defined for the production VM.
+
+Next operational priorities:
+- **Authentication** for API ingestion and sensitive operator actions.
+- **Backup strategy** for production SQLite (`VERIAGENT_DB_PATH`) and recovery procedure on the VM.
