@@ -42,7 +42,7 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title="VeriAgent API", version="0.5.0", lifespan=lifespan)
+app = FastAPI(title="VeriAgent API", version="0.7.0", lifespan=lifespan)
 
 CORS_ALLOWED_ORIGINS = [
     "https://dimikog.github.io",
@@ -63,7 +63,7 @@ def health():
     return {
         "status": "ok",
         "service": "veriagent",
-        "version": "0.5.0",
+        "version": "0.7.0",
     }
 
 

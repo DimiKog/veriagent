@@ -322,7 +322,7 @@ function App() {
           </div>
           <h1>
             VeriAgent
-            <span className="dashboard__version">v0.5.0</span>
+            <span className="dashboard__version">v0.7.0</span>
           </h1>
         </div>
         <p>

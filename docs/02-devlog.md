@@ -215,3 +215,4 @@ Implemented:
 - Public dashboard UI refresh (design tokens, dark mode, numbered workflow steps, hash copy buttons).
 - Live block explorer base: `https://blockexplorer.dimikog.org/tx/` in `frontend/src/api/client.ts`.
 - README and deployment docs updated with explorer URLs and recorded contract address.
+- API and dashboard display version bumped to `0.7.0` (public demo v0.7).
