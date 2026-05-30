@@ -68,6 +68,36 @@
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
+.dashboard__nav {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
+  font-size: 0.83rem;
+  flex-shrink: 0;
+}
+
+.dashboard__nav a {
+  color: var(--va-text-muted);
+  text-decoration: none;
+  transition: color 0.12s;
+}
+
+.dashboard__nav a:hover {
+  color: var(--va-primary);
+}
+
+.dashboard__nav span {
+  color: var(--va-text-faint);
+}
+
+.dashboard__tagline {
+  margin: 0;
+  color: var(--va-text-muted);
+  font-size: 0.875rem;
+}
+
+/* keep old .dashboard__header p rule for any other <p> inside header */
 .dashboard__header p {
   margin: 0;
   color: var(--va-text-muted);
@@ -380,6 +410,51 @@
 
 .external-link:hover {
   text-decoration: underline;
+}
+
+/* ── Success banner ──────────────────────────────────── */
+.success-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 1rem 1.25rem;
+  background: var(--va-success-bg);
+  border: 1px solid var(--va-success-border);
+  border-radius: 10px;
+  color: var(--va-success-text);
+}
+
+.success-banner__icon {
+  font-size: 1.1rem;
+  line-height: 1.4;
+  flex-shrink: 0;
+}
+
+.success-banner div {
+  flex: 1;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.success-banner strong {
+  font-weight: 600;
+}
+
+.success-banner__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-top: 0.1rem;
+  font-size: 0.83rem;
+  color: var(--va-success-text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.success-banner__link:hover {
+  opacity: 0.8;
 }
 
 /* ── Badges ──────────────────────────────────────────── */

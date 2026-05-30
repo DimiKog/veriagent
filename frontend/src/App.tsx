@@ -324,10 +324,31 @@ function App() {
             VeriAgent
             <span className="dashboard__version">v0.7.0</span>
           </h1>
+          <nav className="dashboard__nav" aria-label="External links">
+            <a href="/veriagent/api/docs" target="_blank" rel="noopener noreferrer">
+              API Docs
+            </a>
+            <span aria-hidden="true">·</span>
+            <a
+              href="https://github.com/DimiKog/veriagent"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              GitHub
+            </a>
+            <span aria-hidden="true">·</span>
+            <a
+              href={`https://blockexplorer.dimikog.org/address/0x30546417E83A0C96bf87BEdfEe59De8FBdf1187A`}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Contract
+            </a>
+          </nav>
         </div>
-        <p>
-          Audit workflow UI — events, Merkle batches, proofs, and on-chain anchoring via the
-          VeriAgent API.
+        <p className="dashboard__tagline">
+          Audit events are hashed and committed on-chain — only cryptographic proofs are anchored
+          to Besu Edu-Net, never raw data.
         </p>
       </header>
 
@@ -467,7 +488,8 @@ function App() {
                 type="button"
                 className="btn btn--primary"
                 onClick={handleCreateBatch}
-                disabled={batchStatus.kind === 'loading'}
+                disabled={batchStatus.kind === 'loading' || !workflow.event_id}
+                title={!workflow.event_id ? 'Store an event first' : undefined}
               >
                 {batchStatus.kind === 'loading' ? 'Creating…' : 'Create batch'}
               </button>
@@ -490,7 +512,8 @@ function App() {
                 type="button"
                 className="btn btn--primary"
                 onClick={handleRetrieveProof}
-                disabled={proofStatus.kind === 'loading'}
+                disabled={proofStatus.kind === 'loading' || !workflow.batch_id}
+                title={!workflow.batch_id ? 'Create a batch first' : undefined}
               >
                 {proofStatus.kind === 'loading' ? 'Retrieving…' : 'Get & verify proof'}
               </button>
@@ -519,7 +542,8 @@ function App() {
                 type="button"
                 className="btn btn--primary"
                 onClick={handleAnchorBatch}
-                disabled={anchorStatus.kind === 'loading'}
+                disabled={anchorStatus.kind === 'loading' || !workflow.batch_id}
+                title={!workflow.batch_id ? 'Create a batch first' : undefined}
               >
                 {anchorStatus.kind === 'loading' ? 'Anchoring…' : 'Anchor batch'}
               </button>
@@ -539,13 +563,35 @@ function App() {
                 type="button"
                 className="btn btn--primary"
                 onClick={handleShowAnchorResult}
-                disabled={anchorResultStatus.kind === 'loading'}
+                disabled={anchorResultStatus.kind === 'loading' || !workflow.batch_id}
+                title={!workflow.batch_id ? 'Create a batch first' : undefined}
               >
                 {anchorResultStatus.kind === 'loading' ? 'Loading…' : 'Get anchor record'}
               </button>
             </div>
             <StatusBox status={anchorResultStatus} />
           </section>
+
+          {/* Success banner */}
+          {workflow.tx_hash && (
+            <div className="success-banner" role="status">
+              <span className="success-banner__icon" aria-hidden="true">✓</span>
+              <div>
+                <strong>Verifiable audit trail completed.</strong>
+                <span> The Merkle root is anchored on-chain and independently verifiable.</span>
+              </div>
+              {BLOCKSCOUT_CONFIGURED && (
+                <a
+                  className="success-banner__link"
+                  href={`${BLOCKSCOUT_TX_BASE}${workflow.tx_hash}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  View on Blockscout <ExternalLinkIcon />
+                </a>
+              )}
+            </div>
+          )}
 
         </div>
 
