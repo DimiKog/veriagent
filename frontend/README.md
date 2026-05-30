@@ -72,14 +72,21 @@ It:
 
 1. installs dependencies from `frontend/package-lock.json`
 2. runs `npm run build` in `frontend/`
-3. publishes `frontend/dist/` to GitHub Pages
+3. pushes `frontend/dist/` to the **`gh-pages`** branch
 
 ### One-time repository setup
 
 In the GitHub repository settings:
 
 1. Go to **Settings → Pages**
-2. Under **Build and deployment**, set **Source** to **GitHub Actions**
+2. Under **Build and deployment**, set **Source** to **Deploy from a branch**
+3. Choose branch **`gh-pages`**, folder **`/ (root)`**
+
+Do **not** select **GitHub Actions** as the Pages source for this workflow. That mode expects a `github-pages` deployment environment and a different Actions setup; if Pages is not configured that way, workflow runs fail with:
+
+```text
+Value 'github-pages' is not valid
+```
 
 After the first successful workflow run on `master`, the site is available at:
 
