@@ -1,0 +1,129 @@
+# VeriAgent Frontend
+
+Minimal Vite + React + TypeScript dashboard for the VeriAgent audit workflow.
+
+The UI talks to the deployed backend at `https://veriagent.dimikog.org`. It does not handle wallets, private keys, or any secrets — anchoring is performed server-side.
+
+## Prerequisites
+
+- Node.js 20+ (or another current LTS release)
+- npm
+
+## Setup
+
+From the project root:
+
+```bash
+cd frontend
+npm install
+```
+
+## Scripts
+
+| Script | Command | Purpose |
+| --- | --- | --- |
+| `dev` | `npm run dev` | Start the Vite dev server with hot reload |
+| `build` | `npm run build` | Type-check and build production assets to `dist/` |
+| `preview` | `npm run preview` | Serve the production build locally |
+
+## Local development
+
+```bash
+npm run dev
+```
+
+Open the URL shown in the terminal. Because the app is configured for GitHub Pages, use the `/veriagent/` path — typically:
+
+```text
+http://localhost:5173/veriagent/
+```
+
+## Production build
+
+```bash
+npm run build
+```
+
+Output is written to `frontend/dist/`.
+
+Preview the production build locally (uses the same `/veriagent/` base path as GitHub Pages):
+
+```bash
+npm run preview
+```
+
+Then open:
+
+```text
+http://localhost:4173/veriagent/
+```
+
+## GitHub Pages deployment
+
+The frontend is deployed automatically when changes are pushed to the **`master`** branch.
+
+Workflow file: [`.github/workflows/deploy-frontend.yml`](../.github/workflows/deploy-frontend.yml)
+
+It:
+
+1. installs dependencies from `frontend/package-lock.json`
+2. runs `npm run build` in `frontend/`
+3. publishes `frontend/dist/` to GitHub Pages
+
+### One-time repository setup
+
+In the GitHub repository settings:
+
+1. Go to **Settings → Pages**
+2. Under **Build and deployment**, set **Source** to **GitHub Actions**
+
+After the first successful workflow run on `master`, the site is available at:
+
+```text
+https://<github-username>.github.io/veriagent/
+```
+
+For this repository, that is:
+
+```text
+https://dimikog.github.io/veriagent/
+```
+
+The Vite `base` path is set to `/veriagent/` in `vite.config.ts` so asset URLs resolve correctly on GitHub Pages project sites.
+
+## Dashboard workflow
+
+Use the sections in order for a full end-to-end demo:
+
+1. **API health check** — confirm the backend is reachable.
+2. **Create audit event** — store an audit event and capture `event_id` / `event_hash`.
+3. **Create Merkle batch** — batch unbatched events and capture `batch_id` / `merkle_root`.
+4. **Retrieve Merkle proof** — fetch and verify an inclusion proof for the current event.
+5. **Anchor batch** — submit the batch root on chain via the backend.
+6. **Show anchor result** — read the stored anchor record (`tx_hash`, `chain_id`, etc.).
+
+The **Current workflow state** panel tracks the latest IDs and hashes across steps. When a transaction hash is present, a Blockscout link is shown (placeholder URL until the real explorer base is configured in `src/api/client.ts`).
+
+## API helper
+
+Reusable fetch wrappers live in `src/api/client.ts`. They:
+
+- target the configured `API_BASE_URL`
+- parse FastAPI error `detail` fields into readable messages
+- expose typed helpers for each audit endpoint used by the dashboard
+
+## Changing the API base URL
+
+Edit `API_BASE_URL` in `src/api/client.ts` if you need to point at a local backend during development, for example:
+
+```typescript
+export const API_BASE_URL = 'http://127.0.0.1:8000'
+```
+
+When doing so, ensure the backend allows browser requests from your dev origin (CORS), or use the Vite dev-server proxy if you add one.
+
+## Lint
+
+```bash
+npm run lint
+```

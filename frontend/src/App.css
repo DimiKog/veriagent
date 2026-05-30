@@ -1,0 +1,250 @@
+.dashboard {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 2rem 1.25rem 3rem;
+}
+
+.dashboard__header {
+  margin-bottom: 2rem;
+}
+
+.dashboard__header h1 {
+  margin: 0 0 0.35rem;
+  font-size: 1.75rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.dashboard__header p {
+  margin: 0;
+  color: #5c6370;
+}
+
+.dashboard__layout {
+  display: grid;
+  gap: 1.25rem;
+}
+
+@media (min-width: 860px) {
+  .dashboard__layout {
+    grid-template-columns: 1fr 280px;
+    align-items: start;
+  }
+}
+
+.dashboard__sections {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.panel {
+  background: #fff;
+  border: 1px solid #e2e6ed;
+  border-radius: 10px;
+  padding: 1.15rem 1.25rem;
+  box-shadow: 0 1px 2px rgb(16 24 40 / 4%);
+}
+
+.panel h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.panel p {
+  margin: 0 0 0.75rem;
+  color: #5c6370;
+  font-size: 0.9rem;
+}
+
+.panel__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.45rem 0.9rem;
+  border: 1px solid #c8ced8;
+  border-radius: 6px;
+  background: #fff;
+  color: #1a1a2e;
+  font-weight: 500;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.btn:hover:not(:disabled) {
+  background: #f8f9fb;
+  border-color: #aeb6c4;
+}
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.btn--primary {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #fff;
+}
+
+.btn--primary:hover:not(:disabled) {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+}
+
+.form-grid {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.form-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #374151;
+}
+
+.form-grid input,
+.form-grid textarea {
+  padding: 0.45rem 0.6rem;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.form-grid input:focus,
+.form-grid textarea:focus {
+  outline: 2px solid #93c5fd;
+  outline-offset: 0;
+  border-color: #60a5fa;
+}
+
+.form-grid textarea {
+  min-height: 4.5rem;
+  resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.82rem;
+}
+
+.status {
+  margin-top: 0.75rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: 6px;
+  font-size: 0.875rem;
+}
+
+.status--loading {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+}
+
+.status--success {
+  background: #ecfdf5;
+  color: #047857;
+  border: 1px solid #a7f3d0;
+}
+
+.status--error {
+  background: #fef2f2;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+}
+
+.status pre {
+  margin: 0.5rem 0 0;
+  padding: 0.5rem;
+  background: rgb(0 0 0 / 4%);
+  border-radius: 4px;
+  overflow-x: auto;
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.workflow-panel {
+  position: sticky;
+  top: 1.25rem;
+}
+
+.workflow-panel h2 {
+  margin: 0 0 0.85rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.workflow-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.workflow-list li {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.workflow-list dt {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #6b7280;
+}
+
+.workflow-list dd {
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.78rem;
+  word-break: break-all;
+  color: #111827;
+}
+
+.workflow-list dd.empty {
+  color: #9ca3af;
+  font-style: italic;
+  font-family: inherit;
+}
+
+.external-link {
+  display: inline-block;
+  margin-top: 0.75rem;
+  font-size: 0.85rem;
+  color: #2563eb;
+  text-decoration: none;
+  word-break: break-all;
+}
+
+.external-link:hover {
+  text-decoration: underline;
+}
+
+.badge {
+  display: inline-block;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.badge--ok {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.badge--fail {
+  background: #fee2e2;
+  color: #991b1b;
+}
