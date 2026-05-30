@@ -38,6 +38,10 @@ Open the URL shown in the terminal. Because the app is configured for GitHub Pag
 http://localhost:5173/veriagent/
 ```
 
+Local dev routes API calls through a Vite proxy (`/veriagent-api` → `https://veriagent.dimikog.org`) so you can develop without backend CORS. Override with `VITE_API_BASE_URL` if needed.
+
+The GitHub Pages deployment calls the API directly and **requires** backend CORS for `https://dimikog.github.io` (see [docs/05-deployment.md](../docs/05-deployment.md)).
+
 ## Production build
 
 ```bash

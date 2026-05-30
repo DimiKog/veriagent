@@ -10,7 +10,14 @@ import type {
   StoreEventResponse,
 } from '../types'
 
-export const API_BASE_URL = 'https://veriagent.dimikog.org'
+const PRODUCTION_API_BASE_URL = 'https://veriagent.dimikog.org'
+
+/** Dev server proxies `/veriagent-api` → production API (see vite.config.ts). */
+const DEV_API_BASE_URL = '/veriagent-api'
+
+export const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL ??
+  (import.meta.env.DEV ? DEV_API_BASE_URL : PRODUCTION_API_BASE_URL)
 
 // TODO: Replace with the real Besu Edu-Net Blockscout base URL when available.
 export const BLOCKSCOUT_TX_BASE =
@@ -80,7 +87,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     })
   } catch {
     throw new ApiError(
-      'Network error — could not reach the VeriAgent API',
+      'Request blocked — could not reach the VeriAgent API. If you are using the GitHub Pages dashboard, ensure the backend has CORS enabled for https://dimikog.github.io.',
+      0,
+    )
+  }
+
+  if (response.type === 'opaque') {
+    throw new ApiError(
+      'Request blocked by the browser (CORS). The backend must allow https://dimikog.github.io.',
       0,
     )
   }

@@ -115,6 +115,52 @@ Optional:
 | `VERIAGENT_DB_PATH` | SQLite database file path |
 | `VERIAGENT_RECEIPT_SECRET` | HMAC secret for ingestion receipts |
 
+## CORS (browser frontend)
+
+The backend uses FastAPI `CORSMiddleware` with an explicit allowlist (not `*`), because the API can submit on-chain anchor transactions.
+
+Allowed browser origins:
+
+| Origin | Use case |
+|--------|----------|
+| `https://dimikog.github.io` | GitHub Pages frontend (`/veriagent/`) |
+| `http://localhost:5173` | Local Vite dev server |
+| `http://127.0.0.1:5173` | Local Vite dev server (loopback alias) |
+
+Allowed methods: `GET`, `POST`, `OPTIONS`. All request headers are permitted.
+
+Configuration lives in `backend/app/main.py` (`CORS_ALLOWED_ORIGINS`). Add new frontend deployment origins there — do not use `allow_origins=["*"]`.
+
+### Deploying CORS to the backend VM
+
+The GitHub Pages frontend at `https://dimikog.github.io/veriagent/` cannot call the API until CORS is running on the production backend. After pulling CORS changes:
+
+1. Run tests: `python -m pytest tests/test_cors.py`
+2. Restart the backend service (uvicorn or systemd unit)
+3. Verify the response includes the allowlist header:
+
+```bash
+curl -sI -H "Origin: https://dimikog.github.io" https://veriagent.dimikog.org/health \
+  | grep -i access-control-allow-origin
+```
+
+Expected:
+
+```text
+access-control-allow-origin: https://dimikog.github.io
+```
+
+Preflight (`OPTIONS`) must return `200`, not `405`:
+
+```bash
+curl -sI -X OPTIONS \
+  -H "Origin: https://dimikog.github.io" \
+  -H "Access-Control-Request-Method: POST" \
+  https://veriagent.dimikog.org/audit/events
+```
+
+If uvicorn cannot be restarted immediately, an nginx-only stopgap is documented in [`deploy/nginx-veriagent-api.conf.example`](../deploy/nginx-veriagent-api.conf.example). Use **either** FastAPI CORS **or** nginx CORS, not both.
+
 ## Typical local anchoring flow (Anvil)
 
 1. Run the backend (`uvicorn app.main:app`).
