@@ -8,7 +8,7 @@ VeriAgent is developed locally first. This guide documents what is deployed toda
 |-----------|-----|--------|
 | Dashboard | https://dimikog.github.io/veriagent/ | GitHub Pages; Vite `base` is `/veriagent/` |
 | API | https://veriagent.dimikog.org | FastAPI behind Nginx on a Linux VM |
-| API docs | https://veriagent.dimikog.org/docs | Swagger UI |
+| API docs | https://veriagent.dimikog.org/docs | Swagger UI at `/docs` (not `/api/docs`) |
 | Health | https://veriagent.dimikog.org/health | Returns `version: "0.7.0"` after backend redeploy |
 | Block explorer | https://blockexplorer.dimikog.org/ | Blockscout; contract and txs verified on Besu Edu-Net |
 | Besu RPC (operator) | https://rpc.dimikog.org/rpc/ | Used by Foundry deploy and backend anchoring |
@@ -182,6 +182,7 @@ Override with `VITE_API_BASE_URL` if needed. More detail: [frontend/README.md](.
 | `API_BASE_URL` | `https://veriagent.dimikog.org` (non-dev build) |
 | `BLOCKSCOUT_TX_BASE` | `https://blockexplorer.dimikog.org/tx/` |
 | `BLOCKSCOUT_CONFIGURED` | `true` when the base URL does not contain `example` |
+| `API_DOCS_URL` | `https://veriagent.dimikog.org/docs` (production); `http://127.0.0.1:8000/docs` in Vite dev |
 
 ### Deploy or update the dashboard
 

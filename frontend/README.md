@@ -127,6 +127,10 @@ Reusable fetch wrappers live in `src/api/client.ts`. They:
 
 ## Configuration (`src/api/client.ts`)
 
+### API docs URL
+
+Swagger UI is at `{API host}/docs` (e.g. `https://veriagent.dimikog.org/docs`). The dashboard **API Docs** nav link uses `API_DOCS_URL` in `client.ts` — do not use a GitHub Pages path like `/veriagent/api/docs`.
+
 ### API base URL
 
 Edit `API_BASE_URL` if you need to point at a local backend during development, for example:

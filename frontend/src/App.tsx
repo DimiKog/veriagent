@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react'
 import {
   anchorBatch,
+  API_DOCS_URL,
   ApiError,
   BLOCKSCOUT_CONFIGURED,
   BLOCKSCOUT_TX_BASE,
@@ -325,7 +326,7 @@ function App() {
             <span className="dashboard__version">v0.7.0</span>
           </h1>
           <nav className="dashboard__nav" aria-label="External links">
-            <a href="/veriagent/api/docs" target="_blank" rel="noopener noreferrer">
+            <a href={API_DOCS_URL} target="_blank" rel="noopener noreferrer">
               API Docs
             </a>
             <span aria-hidden="true">·</span>

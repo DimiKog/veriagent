@@ -19,6 +19,11 @@ export const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ??
   (import.meta.env.DEV ? DEV_API_BASE_URL : PRODUCTION_API_BASE_URL)
 
+/** Swagger UI — FastAPI serves `/docs` at the API host root, not under `/api/`. */
+export const API_DOCS_URL = import.meta.env.DEV
+  ? 'http://127.0.0.1:8000/docs'
+  : `${PRODUCTION_API_BASE_URL}/docs`
+
 export const BLOCKSCOUT_TX_BASE = 'https://blockexplorer.dimikog.org/tx/'
 
 /** False while BLOCKSCOUT_TX_BASE is still a placeholder — hides the link in the UI. */
