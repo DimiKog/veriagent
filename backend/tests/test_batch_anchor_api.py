@@ -157,6 +157,8 @@ def test_get_anchor_returns_stored_record_after_anchoring(monkeypatch):
     assert get_response.status_code == 200
     stored = get_response.json()
     posted = post_response.json()
+    assert stored["anchored_at"] == FAKE_CHAIN_TIMESTAMP
+    assert stored["anchored_by"] == ANCHOR_SENDER
     assert stored == {
         key: value for key, value in posted.items() if key != "already_anchored"
     }

@@ -2,6 +2,7 @@ import hashlib
 import json
 import logging
 import os
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -14,6 +15,7 @@ from eth_utils.crypto import keccak
 if TYPE_CHECKING:
     from web3 import Web3
     from web3.contract import Contract
+    from web3.types import BlockIdentifier
 
 RPC_URL_ENV = "VERIAGENT_RPC_URL"
 CHAIN_ID_ENV = "VERIAGENT_CHAIN_ID"
@@ -57,6 +59,96 @@ class OnchainBatch:
     metadata_hash: bytes
     anchored_at: int
     anchored_by: ChecksumAddress
+
+
+def _coerce_bytes32(value: Any) -> bytes:
+    if isinstance(value, bytes):
+        return value
+    if hasattr(value, "hex"):
+        return bytes(value)
+    if isinstance(value, str):
+        normalized = value.removeprefix("0x")
+        return bytes.fromhex(normalized)
+    raise TypeError(f"Expected bytes32-compatible value, got {type(value)!r}")
+
+
+def _get_struct_field(struct: Any, camel_name: str, snake_name: str) -> Any:
+    if isinstance(struct, Mapping):
+        if camel_name in struct:
+            return struct[camel_name]
+        if snake_name in struct:
+            return struct[snake_name]
+    for name in (camel_name, snake_name):
+        if hasattr(struct, name):
+            return getattr(struct, name)
+    raise KeyError(f"Batch struct missing field {camel_name!r}")
+
+
+def _has_named_batch_fields(struct: Any) -> bool:
+    try:
+        _get_struct_field(struct, "anchoredAt", "anchored_at")
+    except KeyError:
+        return False
+    return True
+
+
+def _unwrap_batch_return(raw: Any) -> Any:
+    if isinstance(raw, Sequence) and not isinstance(raw, (bytes, str)) and len(raw) == 1:
+        return _unwrap_batch_return(raw[0])
+    return raw
+
+
+def parse_get_batch_return(raw: Any) -> OnchainBatch:
+    """Parse getBatch() output from web3 (tuple, list, or ABI named struct)."""
+    batch = _unwrap_batch_return(raw)
+
+    if _has_named_batch_fields(batch):
+        return OnchainBatch(
+            merkle_root=_coerce_bytes32(
+                _get_struct_field(batch, "merkleRoot", "merkle_root")
+            ),
+            event_count=int(_get_struct_field(batch, "eventCount", "event_count")),
+            metadata_hash=_coerce_bytes32(
+                _get_struct_field(batch, "metadataHash", "metadata_hash")
+            ),
+            anchored_at=int(_get_struct_field(batch, "anchoredAt", "anchored_at")),
+            anchored_by=to_checksum_address(
+                _get_struct_field(batch, "anchoredBy", "anchored_by")
+            ),
+        )
+
+    if isinstance(batch, Sequence) and not isinstance(batch, (bytes, str)) and len(batch) == 5:
+        return OnchainBatch(
+            merkle_root=_coerce_bytes32(batch[0]),
+            event_count=int(batch[1]),
+            metadata_hash=_coerce_bytes32(batch[2]),
+            anchored_at=int(batch[3]),
+            anchored_by=to_checksum_address(batch[4]),
+        )
+
+    raise ValueError(f"Unexpected getBatch return shape: {type(batch)!r}")
+
+
+def read_anchor_metadata_from_receipt(
+    receipt: dict[str, Any],
+    batch_id: str,
+    *,
+    config: AnchoringConfig | None = None,
+) -> tuple[int, ChecksumAddress] | None:
+    """Read anchoredAt/anchoredBy from BatchAnchored logs when getBatch is unavailable."""
+    cfg = config or load_anchoring_config()
+    web3 = _get_web3(cfg)
+    contract = get_anchor_contract(web3, cfg)
+    batch_id_bytes = batch_id_to_bytes32(batch_id)
+
+    for event in contract.events.BatchAnchored().process_receipt(receipt):
+        args = event["args"]
+        if args["batchId"] == batch_id_bytes:
+            return (
+                int(args["anchoredAt"]),
+                to_checksum_address(args["anchoredBy"]),
+            )
+    return None
 
 
 def batch_id_to_bytes32(batch_id: str) -> bytes:
@@ -229,6 +321,7 @@ def anchor_batch(
 def get_onchain_batch(
     batch_id: str,
     *,
+    block_identifier: "BlockIdentifier" = "latest",
     config: AnchoringConfig | None = None,
 ) -> OnchainBatch:
     cfg = config or load_anchoring_config()
@@ -236,17 +329,10 @@ def get_onchain_batch(
     contract = get_anchor_contract(web3, cfg)
     batch_id_bytes = batch_id_to_bytes32(batch_id)
 
-    merkle_root, event_count, metadata_hash, anchored_at, anchored_by = (
-        contract.functions.getBatch(batch_id_bytes).call()
+    raw = contract.functions.getBatch(batch_id_bytes).call(
+        block_identifier=block_identifier
     )
-
-    return OnchainBatch(
-        merkle_root=bytes(merkle_root),
-        event_count=int(event_count),
-        metadata_hash=bytes(metadata_hash),
-        anchored_at=int(anchored_at),
-        anchored_by=to_checksum_address(anchored_by),
-    )
+    return parse_get_batch_return(raw)
 
 
 def is_batch_anchored(

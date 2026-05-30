@@ -60,15 +60,32 @@ def perform_batch_anchor(
         config=cfg,
     )
     receipt = anchoring.wait_for_transaction_receipt(tx_hash, config=cfg)
-    onchain = anchoring.get_onchain_batch(batch.batch_id, config=cfg)
+    block_number = int(receipt["blockNumber"])
+    onchain = anchoring.get_onchain_batch(
+        batch.batch_id,
+        block_identifier=block_number,
+        config=cfg,
+    )
+
+    anchored_at = int(onchain.anchored_at)
+    anchored_by = str(onchain.anchored_by)
+    if anchored_at == 0 or anchored_by == "0x0000000000000000000000000000000000000000":
+        fallback = anchoring.read_anchor_metadata_from_receipt(
+            receipt,
+            batch.batch_id,
+            config=cfg,
+        )
+        if fallback is not None:
+            anchored_at, anchored_by_checksum = fallback
+            anchored_by = str(anchored_by_checksum)
 
     stored = store_batch_anchor(
         batch_id=batch.batch_id,
         anchor_address=str(cfg.contract_address),
         tx_hash=_normalize_tx_hash(tx_hash),
-        block_number=int(receipt["blockNumber"]),
-        anchored_at=int(onchain.anchored_at),
-        anchored_by=str(onchain.anchored_by),
+        block_number=block_number,
+        anchored_at=anchored_at,
+        anchored_by=anchored_by,
         chain_id=cfg.chain_id,
         db_path=db_path,
     )

@@ -4,8 +4,12 @@ import os
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+from types import SimpleNamespace
+
 import pytest
 from eth_typing import ChecksumAddress
+from web3.datastructures import AttributeDict
+from web3._utils.abi import named_tree, recursive_dict_to_namedtuple
 
 from app.anchoring import (
     CHAIN_ID_ENV,
@@ -19,16 +23,22 @@ from app.anchoring import (
     AnchoringConfigError,
     anchor_batch,
     batch_id_to_bytes32,
+    get_onchain_batch,
     load_anchoring_config,
     load_contract_abi,
     metadata_hash_for_batch,
+    parse_get_batch_return,
     wait_for_transaction_receipt,
 )
 
 ANCHOR_CONTRACT = ChecksumAddress("0x5FbDB2315678afecb367f032d93F642f64180aa3")
 ANCHOR_SENDER = ChecksumAddress("0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266")
+BESU_ANCHOR_SENDER = ChecksumAddress("0xC034625CAd2fc3143C52E33d7A5fdbe864C3FfCb")
 TEST_PRIVATE_KEY = "0xac0974bec39a713e79292259bf58859cb0783e6fdc6274d536bb63ac40d05891f"
 FAKE_TX_HASH = "0x" + "cd" * 32
+ONCHAIN_MERKLE = b"\x01" * 32
+ONCHAIN_METADATA = b"\x02" * 32
+ONCHAIN_ANCHORED_AT = 1_760_000_000
 
 SAMPLE_METADATA = {
     "batch_id": "550e8400-e29b-41d4-a716-446655440000",
@@ -97,6 +107,154 @@ def test_metadata_hash_changes_when_metadata_changes():
         **{**SAMPLE_METADATA, "event_count": SAMPLE_METADATA["event_count"] + 1}
     )
     assert baseline != changed
+
+
+def _expected_onchain_batch():
+    return {
+        "merkle_root": ONCHAIN_MERKLE,
+        "event_count": 2,
+        "metadata_hash": ONCHAIN_METADATA,
+        "anchored_at": ONCHAIN_ANCHORED_AT,
+        "anchored_by": BESU_ANCHOR_SENDER,
+    }
+
+
+def _assert_onchain_batch(batch, expected):
+    assert batch.merkle_root == expected["merkle_root"]
+    assert batch.event_count == expected["event_count"]
+    assert batch.metadata_hash == expected["metadata_hash"]
+    assert batch.anchored_at == expected["anchored_at"]
+    assert batch.anchored_by == expected["anchored_by"]
+
+
+def test_parse_get_batch_return_from_positional_tuple():
+    expected = _expected_onchain_batch()
+    raw = (
+        expected["merkle_root"],
+        expected["event_count"],
+        expected["metadata_hash"],
+        expected["anchored_at"],
+        expected["anchored_by"],
+    )
+    _assert_onchain_batch(parse_get_batch_return(raw), expected)
+
+
+def test_parse_get_batch_return_from_positional_list():
+    expected = _expected_onchain_batch()
+    raw = [
+        expected["merkle_root"],
+        expected["event_count"],
+        expected["metadata_hash"],
+        expected["anchored_at"],
+        expected["anchored_by"],
+    ]
+    _assert_onchain_batch(parse_get_batch_return(raw), expected)
+
+
+def test_parse_get_batch_return_from_single_element_wrapper():
+    expected = _expected_onchain_batch()
+    raw = [
+        (
+            expected["merkle_root"],
+            expected["event_count"],
+            expected["metadata_hash"],
+            expected["anchored_at"],
+            expected["anchored_by"],
+        )
+    ]
+    _assert_onchain_batch(parse_get_batch_return(raw), expected)
+
+
+def test_parse_get_batch_return_from_attribute_dict():
+    expected = _expected_onchain_batch()
+    raw = AttributeDict(
+        {
+            "merkleRoot": expected["merkle_root"],
+            "eventCount": expected["event_count"],
+            "metadataHash": expected["metadata_hash"],
+            "anchoredAt": expected["anchored_at"],
+            "anchoredBy": expected["anchored_by"],
+        }
+    )
+    _assert_onchain_batch(parse_get_batch_return(raw), expected)
+
+
+def test_parse_get_batch_return_from_abi_named_tuple():
+    expected = _expected_onchain_batch()
+    get_batch_abi = next(
+        entry for entry in load_contract_abi() if entry.get("name") == "getBatch"
+    )
+    normalized = [
+        (
+            expected["merkle_root"],
+            expected["event_count"],
+            expected["metadata_hash"],
+            expected["anchored_at"],
+            expected["anchored_by"],
+        )
+    ]
+    decoded = named_tree(get_batch_abi["outputs"], normalized)
+    raw = recursive_dict_to_namedtuple(decoded)[0]
+    _assert_onchain_batch(parse_get_batch_return(raw), expected)
+
+
+def test_parse_get_batch_return_from_simple_namespace():
+    expected = _expected_onchain_batch()
+    raw = SimpleNamespace(
+        merkleRoot=expected["merkle_root"],
+        eventCount=expected["event_count"],
+        metadataHash=expected["metadata_hash"],
+        anchoredAt=expected["anchored_at"],
+        anchoredBy=expected["anchored_by"],
+    )
+    _assert_onchain_batch(parse_get_batch_return(raw), expected)
+
+
+def test_get_onchain_batch_uses_named_struct_from_contract_call(monkeypatch):
+    expected = _expected_onchain_batch()
+
+    class FakeGetBatchFunction:
+        def __init__(self, _batch_id_bytes):
+            self.block_identifier = None
+
+        def call(self, block_identifier="latest"):
+            self.block_identifier = block_identifier
+            return SimpleNamespace(
+                merkleRoot=expected["merkle_root"],
+                eventCount=expected["event_count"],
+                metadataHash=expected["metadata_hash"],
+                anchoredAt=expected["anchored_at"],
+                anchoredBy=expected["anchored_by"],
+            )
+
+    class FakeContractFunctions:
+        def getBatch(self, batch_id_bytes):
+            return FakeGetBatchFunction(batch_id_bytes)
+
+    class FakeContract:
+        functions = FakeContractFunctions()
+
+    fake_function_holder: dict[str, FakeGetBatchFunction] = {}
+
+    class FakeContractFunctionsWithHolder:
+        def getBatch(self, batch_id_bytes):
+            fn = FakeGetBatchFunction(batch_id_bytes)
+            fake_function_holder["fn"] = fn
+            return fn
+
+    class FakeContractWithHolder:
+        functions = FakeContractFunctionsWithHolder()
+
+    monkeypatch.setattr("app.anchoring._get_web3", lambda config=None: MagicMock())
+    monkeypatch.setattr(
+        "app.anchoring.get_anchor_contract",
+        lambda web3, config=None: FakeContractWithHolder(),
+    )
+
+    batch = get_onchain_batch("batch-parse-test", block_identifier=12345, config=_test_config())
+
+    _assert_onchain_batch(batch, expected)
+    assert fake_function_holder["fn"].block_identifier == 12345
 
 
 @pytest.mark.parametrize(
