@@ -1,4 +1,5 @@
 import hashlib
+from collections.abc import Sequence
 from typing import Literal
 
 ProofSide = Literal["left", "right"]
@@ -64,7 +65,7 @@ def merkle_proof(leaves: list[str], target_hash: str) -> list[ProofStep]:
 def verify_inclusion_proof(
     event_hash: str,
     merkle_root: str,
-    proof: list[ProofStep],
+    proof: Sequence[tuple[str, str]],
 ) -> bool:
     current = event_hash
     for sibling, side in proof:
