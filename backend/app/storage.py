@@ -303,29 +303,6 @@ def get_batch_event(
     )
 
 
-def get_batch_leaves(batch_id: str, db_path: Path | str | None = None) -> list[BatchLeaf]:
-    init_db(db_path)
-    with _connect(db_path) as conn:
-        rows = conn.execute(
-            """
-            SELECT event_id, event_hash, leaf_index
-            FROM batch_events
-            WHERE batch_id = ?
-            ORDER BY leaf_index ASC
-            """,
-            (batch_id,),
-        ).fetchall()
-
-    return [
-        BatchLeaf(
-            event_id=row["event_id"],
-            event_hash=row["event_hash"],
-            leaf_index=row["leaf_index"],
-        )
-        for row in rows
-    ]
-
-
 def store_batch_anchor(
     batch_id: str,
     anchor_address: str,

@@ -54,6 +54,8 @@ Solc `0.8.20` is set in the same file.
 
 ### Deploy command
 
+`contracts/foundry.toml` defines `[rpc_endpoints]` aliases (`anvil`, `besu`). Export `BESU_RPC_URL` before using `--rpc-url besu`.
+
 From `contracts/`:
 
 ```bash
@@ -61,12 +63,14 @@ export BESU_RPC_URL="https://rpc.dimikog.org/rpc/"
 export BESU_PRIVATE_KEY="0x..."   # never commit this value
 
 forge script script/DeployVeriAgentAnchor.s.sol:DeployVeriAgentAnchor \
-  --rpc-url "$BESU_RPC_URL" \
+  --rpc-url besu \
   --broadcast \
   --private-key "$BESU_PRIVATE_KEY" \
   --legacy \
   --with-gas-price 1000000000
 ```
+
+You can still pass `--rpc-url "$BESU_RPC_URL"` directly if you prefer not to use the alias.
 
 - `--legacy` — legacy transaction type required for this Besu network configuration.
 - `--with-gas-price 1000000000` — `1 gwei`.

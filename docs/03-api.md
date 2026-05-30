@@ -121,6 +121,8 @@ Returns:
 
 Returns `503 Service Unavailable` when anchoring configuration is missing or invalid.
 
+Returns `502 Bad Gateway` when the anchor transaction is mined but reverts (`receipt.status == 0`). No SQLite anchor record is stored in that case.
+
 ## GET /audit/batches/{batch_id}/anchor
 
 Returns the SQLite anchor record for a batch.

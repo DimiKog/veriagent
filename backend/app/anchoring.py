@@ -1,5 +1,6 @@
 import hashlib
 import json
+import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -28,10 +29,17 @@ REQUIRED_ENV_VARS = (
 
 APP_DIR = Path(__file__).resolve().parent
 DEFAULT_ABI_PATH = APP_DIR / "abi" / "VeriAgentAnchor.json"
+FALLBACK_ANCHOR_GAS = 500_000
+
+logger = logging.getLogger(__name__)
 
 
 class AnchoringConfigError(Exception):
     """Raised when required anchoring configuration is missing or invalid."""
+
+
+class AnchorTransactionFailedError(Exception):
+    """Raised when an anchor transaction receipt indicates failure or revert."""
 
 
 @dataclass(frozen=True)
@@ -191,8 +199,17 @@ def anchor_batch(
     )
     try:
         estimated_gas = function.estimate_gas({"from": account.address})
-    except Exception:
-        estimated_gas = 500_000
+    except Exception as exc:
+        logger.warning(
+            "anchor_batch gas estimation failed for batch_id=%s from=%s; "
+            "using fallback gas=%s: %s",
+            batch_id,
+            account.address,
+            FALLBACK_ANCHOR_GAS,
+            exc,
+            exc_info=True,
+        )
+        estimated_gas = FALLBACK_ANCHOR_GAS
 
     transaction = function.build_transaction(
         {
@@ -244,6 +261,13 @@ def is_batch_anchored(
     return bool(contract.functions.isAnchored(batch_id_bytes).call())
 
 
+def _receipt_status(receipt: dict[str, Any]) -> int:
+    status = receipt.get("status")
+    if status is None:
+        raise AnchorTransactionFailedError("Anchor transaction receipt is missing status")
+    return int(status)
+
+
 def wait_for_transaction_receipt(
     tx_hash: str,
     *,
@@ -253,5 +277,9 @@ def wait_for_transaction_receipt(
     cfg = config or load_anchoring_config()
     web3 = _get_web3(cfg)
     normalized = tx_hash if tx_hash.startswith("0x") else f"0x{tx_hash}"
-    receipt = web3.eth.wait_for_transaction_receipt(normalized)
-    return dict(receipt)
+    receipt = dict(web3.eth.wait_for_transaction_receipt(normalized))
+    if _receipt_status(receipt) == 0:
+        raise AnchorTransactionFailedError(
+            f"Anchor transaction reverted (status=0): tx_hash={normalized}"
+        )
+    return receipt

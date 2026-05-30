@@ -4,7 +4,7 @@ from fastapi import FastAPI, HTTPException
 
 from app.hashing import canonicalize_event, hash_event
 from app.merkle import merkle_proof, verify_inclusion_proof
-from app.anchoring import AnchoringConfigError
+from app.anchoring import AnchorTransactionFailedError, AnchoringConfigError
 from app.batch_anchoring import BatchNotFoundError, perform_batch_anchor
 from app.models import (
     AnchorBatchResponse,
@@ -158,6 +158,10 @@ def create_batch():
     )
 
 
+# Register specific /audit/batches/{batch_id}/... routes before GET /audit/batches/{batch_id}
+# so the generic batch path does not shadow /anchor or /proof/{event_id}.
+
+
 @app.get("/audit/batches/{batch_id}/proof/{event_id}", response_model=BatchProofResponse)
 def get_batch_inclusion_proof(batch_id: str, event_id: str):
     batch = get_batch(batch_id)
@@ -197,6 +201,11 @@ def anchor_batch_on_chain(batch_id: str):
         raise HTTPException(
             status_code=503,
             detail=f"Anchoring is not configured: {exc}",
+        ) from exc
+    except AnchorTransactionFailedError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Anchor transaction failed: {exc}",
         ) from exc
 
     record = _batch_anchor_record(result.anchor)

@@ -2,8 +2,9 @@ from eth_typing import ChecksumAddress
 
 from fastapi.testclient import TestClient
 
-from app.anchoring import AnchoringConfig, OnchainBatch
+from app.anchoring import AnchorTransactionFailedError, AnchoringConfig, OnchainBatch
 from app.main import app
+from app.storage import get_batch_anchor
 from tests.test_api import sample_event_payload
 
 client = TestClient(app)
@@ -114,6 +115,34 @@ def test_post_anchor_is_idempotent(monkeypatch):
     assert second.json()["already_anchored"] is True
     assert second.json()["tx_hash"] == first.json()["tx_hash"]
     assert len(anchor_calls) == 1
+
+
+def test_post_anchor_does_not_store_record_when_transaction_reverts(monkeypatch):
+    batch = _create_batch()
+    anchor_calls: list[tuple] = []
+
+    def fake_anchor_batch(batch_id, merkle_root, event_count, metadata_hash, **kwargs):
+        anchor_calls.append((batch_id, merkle_root, event_count, metadata_hash))
+        return FAKE_TX_HASH
+
+    def fake_wait_for_transaction_receipt(tx_hash, **kwargs):
+        raise AnchorTransactionFailedError(
+            f"Anchor transaction reverted (status=0): tx_hash={tx_hash}"
+        )
+
+    monkeypatch.setattr("app.batch_anchoring.load_anchoring_config", _fake_anchoring_config)
+    monkeypatch.setattr("app.batch_anchoring.anchoring.anchor_batch", fake_anchor_batch)
+    monkeypatch.setattr(
+        "app.batch_anchoring.anchoring.wait_for_transaction_receipt",
+        fake_wait_for_transaction_receipt,
+    )
+
+    response = client.post(f"/audit/batches/{batch['batch_id']}/anchor")
+
+    assert response.status_code == 502
+    assert "reverted" in response.json()["detail"].lower()
+    assert len(anchor_calls) == 1
+    assert get_batch_anchor(batch["batch_id"]) is None
 
 
 def test_get_anchor_returns_stored_record_after_anchoring(monkeypatch):

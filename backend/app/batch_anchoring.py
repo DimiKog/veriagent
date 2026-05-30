@@ -3,6 +3,8 @@
 from dataclasses import dataclass
 from typing import Any
 
+# Module-level `anchoring` import keeps the namespace at app.batch_anchoring.anchoring
+# so tests can monkeypatch app.batch_anchoring.anchoring.anchor_batch (and siblings).
 from app import anchoring
 from app.anchoring import (
     AnchoringConfig,
