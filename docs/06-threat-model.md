@@ -22,9 +22,23 @@
 - Backend modification before anchoring.
 - Operator-controlled private-chain governance risks.
 - Full legal or regulatory compliance.
+- Unauthorized audit event ingestion (`POST /audit/events` is still open in Phase 6A).
+
+## Phase 6A (partial)
+
+Implemented:
+- Admin-protected agent registration (`VERIAGENT_ADMIN_API_KEY` / `X-VeriAgent-Admin-Key`).
+- DID metadata storage with per-agent API keys (SHA-256 hash only at rest).
+- Constant-time admin key comparison via `hmac.compare_digest`.
+
+Not yet implemented:
+- Agent API key enforcement on `POST /audit/events`.
+- Cryptographic event signatures tied to agent DIDs.
+- DID resolution or verification of `public_key` against the DID document.
 
 ## Future Mitigations
 
+- Agent API key authentication for audit ingestion.
 - Signed receipt at ingestion time.
 - Short anchoring intervals.
 - Public-chain or consortium anchoring.

@@ -28,6 +28,7 @@ python -m pytest -v
 | `tests/test_api.py` | FastAPI endpoints including receipt responses |
 | `tests/test_anchoring.py` | On-chain anchor helpers (batch id, metadata hash, ABI loading, config) |
 | `tests/test_batch_anchor_api.py` | Batch anchor API with monkeypatched web3 calls (no Anvil required) |
+| `tests/test_agents_api.py` | Agent registry registration and lookup with admin key auth |
 
 ## Isolation
 
@@ -35,6 +36,7 @@ Tests use isolated resources via environment variables set in `tests/conftest.py
 
 - `VERIAGENT_DB_PATH` — temporary SQLite database per test
 - `VERIAGENT_RECEIPT_SECRET` — fixed secret for deterministic receipt tests
+- `VERIAGENT_ADMIN_API_KEY` — fixed admin key for agent registry tests
 
 ## Receipt tests
 
@@ -91,6 +93,18 @@ Coverage includes:
 - Second `POST` is idempotent (`already_anchored: true`, no second `anchor_batch` call)
 - `GET` returns the stored record after anchoring
 
+## Agent registry tests
+
+Agent registry API tests cover:
+
+- Successful registration with admin key; response includes raw `api_key` with `va_agent_` prefix
+- `401 Unauthorized` when admin key is missing or invalid
+- `409 Conflict` for duplicate `agent_did`
+- `400 Bad Request` for invalid `agent_did` or `verification_method`
+- `GET /agents/{agent_did}` returns metadata without `api_key_hash` or raw `api_key`
+- `404 Not Found` for unregistered agents
+- Stored row contains SHA-256 hash of the issued API key, not the raw key
+
 ## Manual API checks
 
 With the server running (`uvicorn app.main:app --reload`):
@@ -103,6 +117,7 @@ For production-like runs, set a strong secret:
 
 ```bash
 export VERIAGENT_RECEIPT_SECRET="replace-with-a-long-random-secret"
+export VERIAGENT_ADMIN_API_KEY="replace-with-a-long-random-admin-key"
 ```
 
 ## Dashboard end-to-end check

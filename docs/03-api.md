@@ -141,3 +141,65 @@ Request body:
 Returns:
 - `verified: true` if the proof resolves to the supplied root
 - `verified: false` otherwise
+
+## POST /agents/register
+
+Registers an agent in the DID-based agent registry. **Admin-protected.**
+
+Requires header:
+- `X-VeriAgent-Admin-Key` — must match `VERIAGENT_ADMIN_API_KEY`
+
+Request body:
+- `agent_did` — must start with `did:key:`
+- `agent_name`
+- `agent_type` — e.g. `llm-agent`
+- `description` — optional
+- `verification_method` — must start with `{agent_did}#`
+- `public_key`
+
+Behavior:
+1. validates `agent_did` and `verification_method` format,
+2. generates a per-agent API key with prefix `va_agent_`,
+3. stores only the SHA-256 hash of the API key,
+4. sets `status` to `active`,
+5. returns agent metadata plus the raw `api_key` **once** in the response.
+
+Returns:
+- `agent_did`
+- `agent_name`
+- `agent_type`
+- `description`
+- `verification_method`
+- `public_key`
+- `status`
+- `created_at`
+- `api_key` — shown only at registration time
+
+Returns `401 Unauthorized` when the admin key is missing or invalid.
+
+Returns `400 Bad Request` for invalid `agent_did` or `verification_method`.
+
+Returns `409 Conflict` when `agent_did` is already registered.
+
+## GET /agents/{agent_did}
+
+Returns stored agent metadata. **Admin-protected** in Phase 6A.
+
+Requires header:
+- `X-VeriAgent-Admin-Key` — must match `VERIAGENT_ADMIN_API_KEY`
+
+Returns:
+- `agent_did`
+- `agent_name`
+- `agent_type`
+- `description`
+- `verification_method`
+- `public_key`
+- `status`
+- `created_at`
+
+Never returns `api_key` or `api_key_hash`.
+
+Returns `401 Unauthorized` when the admin key is missing or invalid.
+
+Returns `404 Not Found` when the agent is not registered.

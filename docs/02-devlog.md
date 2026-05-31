@@ -230,10 +230,31 @@ audit event → ingestion receipt → Merkle batch → inclusion proof
 
 Operator flow exercised via the dashboard and API: store event, batch, proof/verify, anchor batch, confirm `tx_hash` on `https://blockexplorer.dimikog.org/tx/{hash}`.
 
+## 2026-05-31 (Phase 6A)
+
+Decisions:
+- Agent registry only; no ingestion auth, event signatures, or DID resolution yet.
+- Admin onboarding protected by `VERIAGENT_ADMIN_API_KEY` via `X-VeriAgent-Admin-Key`.
+- Agent API keys use prefix `va_agent_`; only SHA-256 hashes are stored.
+- `GET /agents/{agent_did}` is admin-protected for now (public lookup deferred).
+- `POST /audit/events` remains unauthenticated in this phase.
+
+Implemented:
+- `backend/app/auth.py` with constant-time admin key verification and agent API key helpers.
+- SQLite `agents` table and storage helpers (`register_agent`, `get_agent`).
+- `POST /agents/register` and `GET /agents/{agent_did}`.
+- Pytest coverage in `tests/test_agents_api.py`.
+
+Tested:
+- Successful registration returns raw API key once.
+- Missing, invalid, and duplicate registration cases.
+- Invalid `agent_did` and `verification_method` rejection.
+- GET returns metadata without `api_key_hash`; missing agent returns `404`.
+
 Current limitation:
-- No authentication or agent identity layer on the public API.
-- SQLite backup and restore strategy not defined for the production VM.
+- Registered agent DIDs are not yet enforced on audit event ingestion.
+- No event signatures or DID resolution.
 
 Next operational priorities:
-- **Authentication** for API ingestion and sensitive operator actions.
+- **Agent API key auth** for `POST /audit/events`.
 - **Backup strategy** for production SQLite (`VERIAGENT_DB_PATH`) and recovery procedure on the VM.

@@ -15,6 +15,10 @@ class EventAlreadyExistsError(Exception):
     pass
 
 
+class AgentAlreadyExistsError(Exception):
+    pass
+
+
 class NoUnbatchedEventsError(Exception):
     pass
 
@@ -41,6 +45,19 @@ class StoredBatch:
     event_count: int
     created_at: str
     event_hashes: list[str]
+
+
+@dataclass(frozen=True)
+class StoredAgent:
+    agent_did: str
+    agent_name: str
+    agent_type: str
+    description: str | None
+    verification_method: str
+    public_key: str
+    api_key_hash: str
+    status: str
+    created_at: str
 
 
 @dataclass(frozen=True)
@@ -117,6 +134,21 @@ def init_db(db_path: Path | str | None = None) -> None:
                 anchored_by TEXT NOT NULL,
                 chain_id INTEGER NOT NULL,
                 FOREIGN KEY (batch_id) REFERENCES audit_batches(batch_id)
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS agents (
+                agent_did TEXT PRIMARY KEY,
+                agent_name TEXT NOT NULL,
+                agent_type TEXT NOT NULL,
+                description TEXT,
+                verification_method TEXT NOT NULL,
+                public_key TEXT NOT NULL,
+                api_key_hash TEXT NOT NULL,
+                status TEXT NOT NULL,
+                created_at TEXT NOT NULL
             )
             """
         )
@@ -383,4 +415,102 @@ def get_batch_anchor(
         anchored_at=row["anchored_at"],
         anchored_by=row["anchored_by"],
         chain_id=row["chain_id"],
+    )
+
+
+def register_agent(
+    agent_did: str,
+    agent_name: str,
+    agent_type: str,
+    description: str | None,
+    verification_method: str,
+    public_key: str,
+    api_key_hash: str,
+    status: str,
+    db_path: Path | str | None = None,
+) -> StoredAgent:
+    init_db(db_path)
+    created_at = datetime.now(timezone.utc).isoformat()
+    try:
+        with _connect(db_path) as conn:
+            conn.execute(
+                """
+                INSERT INTO agents (
+                    agent_did,
+                    agent_name,
+                    agent_type,
+                    description,
+                    verification_method,
+                    public_key,
+                    api_key_hash,
+                    status,
+                    created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    agent_did,
+                    agent_name,
+                    agent_type,
+                    description,
+                    verification_method,
+                    public_key,
+                    api_key_hash,
+                    status,
+                    created_at,
+                ),
+            )
+            conn.commit()
+    except sqlite3.IntegrityError as exc:
+        raise AgentAlreadyExistsError(agent_did) from exc
+
+    return StoredAgent(
+        agent_did=agent_did,
+        agent_name=agent_name,
+        agent_type=agent_type,
+        description=description,
+        verification_method=verification_method,
+        public_key=public_key,
+        api_key_hash=api_key_hash,
+        status=status,
+        created_at=created_at,
+    )
+
+
+def get_agent(
+    agent_did: str,
+    db_path: Path | str | None = None,
+) -> StoredAgent | None:
+    init_db(db_path)
+    with _connect(db_path) as conn:
+        row = conn.execute(
+            """
+            SELECT
+                agent_did,
+                agent_name,
+                agent_type,
+                description,
+                verification_method,
+                public_key,
+                api_key_hash,
+                status,
+                created_at
+            FROM agents
+            WHERE agent_did = ?
+            """,
+            (agent_did,),
+        ).fetchone()
+
+    if row is None:
+        return None
+
+    return StoredAgent(
+        agent_did=row["agent_did"],
+        agent_name=row["agent_name"],
+        agent_type=row["agent_type"],
+        description=row["description"],
+        verification_method=row["verification_method"],
+        public_key=row["public_key"],
+        api_key_hash=row["api_key_hash"],
+        status=row["status"],
+        created_at=row["created_at"],
     )

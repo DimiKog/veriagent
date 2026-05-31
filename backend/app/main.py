@@ -1,13 +1,19 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.hashing import canonicalize_event, hash_event
 from app.merkle import merkle_proof, verify_inclusion_proof
 from app.anchoring import AnchorTransactionFailedError, AnchoringConfigError
 from app.batch_anchoring import BatchNotFoundError, perform_batch_anchor
+from app.auth import (
+    generate_agent_api_key,
+    hash_agent_api_key,
+    require_admin_api_key,
+)
 from app.models import (
+    AgentResponse,
     AnchorBatchResponse,
     AuditEvent,
     BatchAnchorRecord,
@@ -17,21 +23,27 @@ from app.models import (
     MerkleProofStep,
     MerkleVerifyRequest,
     MerkleVerifyResponse,
+    RegisterAgentRequest,
+    RegisterAgentResponse,
     StoreEventResponse,
     StoredEventResponse,
     VerifyResponse,
 )
 from app.receipts import generate_receipt
 from app.storage import (
+    AgentAlreadyExistsError,
     EventAlreadyExistsError,
     NoUnbatchedEventsError,
+    StoredAgent,
     StoredBatchAnchor,
     create_batch_from_unbatched,
+    get_agent,
     get_audit_event,
     get_batch,
     get_batch_anchor,
     get_batch_event,
     init_db,
+    register_agent,
     store_audit_event,
 )
 
@@ -65,6 +77,19 @@ def health():
         "service": "veriagent",
         "version": "0.7.0",
     }
+
+
+def _agent_response(agent: StoredAgent) -> AgentResponse:
+    return AgentResponse(
+        agent_did=agent.agent_did,
+        agent_name=agent.agent_name,
+        agent_type=agent.agent_type,
+        description=agent.description,
+        verification_method=agent.verification_method,
+        public_key=agent.public_key,
+        status=agent.status,
+        created_at=agent.created_at,
+    )
 
 
 def _batch_anchor_record(anchor: StoredBatchAnchor) -> BatchAnchorRecord:
@@ -251,6 +276,62 @@ def get_batch_by_id(batch_id: str):
         created_at=batch.created_at,
         event_hashes=batch.event_hashes,
     )
+
+
+@app.post("/agents/register", response_model=RegisterAgentResponse)
+def register_agent_endpoint(
+    request: RegisterAgentRequest,
+    _: None = Depends(require_admin_api_key),
+):
+    if not request.agent_did.startswith("did:key:"):
+        raise HTTPException(
+            status_code=400,
+            detail="agent_did must start with 'did:key:'",
+        )
+
+    expected_verification_prefix = f"{request.agent_did}#"
+    if not request.verification_method.startswith(expected_verification_prefix):
+        raise HTTPException(
+            status_code=400,
+            detail="verification_method must start with agent_did followed by '#'",
+        )
+
+    api_key = generate_agent_api_key()
+    api_key_hash = hash_agent_api_key(api_key)
+
+    try:
+        stored = register_agent(
+            agent_did=request.agent_did,
+            agent_name=request.agent_name,
+            agent_type=request.agent_type,
+            description=request.description,
+            verification_method=request.verification_method,
+            public_key=request.public_key,
+            api_key_hash=api_key_hash,
+            status="active",
+        )
+    except AgentAlreadyExistsError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Agent already registered: {exc.args[0]}",
+        ) from exc
+
+    return RegisterAgentResponse(
+        **_agent_response(stored).model_dump(),
+        api_key=api_key,
+    )
+
+
+@app.get("/agents/{agent_did}", response_model=AgentResponse)
+def get_agent_endpoint(
+    agent_did: str,
+    _: None = Depends(require_admin_api_key),
+):
+    agent = get_agent(agent_did)
+    if agent is None:
+        raise HTTPException(status_code=404, detail=f"Agent not found: {agent_did}")
+
+    return _agent_response(agent)
 
 
 @app.post("/audit/merkle/verify", response_model=MerkleVerifyResponse)

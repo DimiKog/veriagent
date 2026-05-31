@@ -25,6 +25,7 @@ VeriAgent provides a prototype audit pipeline for AI-agent activity:
 - Computes SHA-256 event commitments
 - Stores events locally in SQLite
 - Returns signed HMAC-SHA256 ingestion receipts
+- Registers agents by DID with admin-protected onboarding (Phase 6A)
 - Batches event hashes into Merkle trees
 - Generates and verifies Merkle inclusion proofs
 - Anchors Merkle roots on Besu via `VeriAgentAnchor`
@@ -39,7 +40,7 @@ This is a **research prototype**, not a production compliance product.
 - The **backend operator is trusted** in this demo. The API stores events and submits anchor transactions.
 - **SQLite is mutable** before anchoring. Local records can be changed until a batch root is anchored on chain.
 - **Blockchain anchoring** provides a timestamped, public commitment *after* anchoring. It does not prove the underlying agent action occurred.
-- **Event submission is self-attested.** Callers supply audit payloads; VeriAgent does not authenticate agents or validate off-chain inputs.
+- **Event submission is self-attested.** Callers supply audit payloads; VeriAgent does not authenticate agents or validate off-chain inputs. Agent registration (Phase 6A) stores DID metadata and per-agent API keys for future ingestion auth; `POST /audit/events` remains unauthenticated for now.
 - **This is not an EU AI Act compliance product.** It demonstrates technical building blocks only.
 
 ## Architecture
@@ -74,6 +75,7 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 export VERIAGENT_RECEIPT_SECRET="replace-with-a-long-random-secret"
+export VERIAGENT_ADMIN_API_KEY="replace-with-a-long-random-admin-key"
 python -m pytest
 uvicorn app.main:app --reload
 ```

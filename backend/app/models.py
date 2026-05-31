@@ -93,3 +93,35 @@ class BatchAnchorRecord(BaseModel):
 
 class AnchorBatchResponse(BatchAnchorRecord):
     already_anchored: bool
+
+
+class RegisterAgentRequest(BaseModel):
+    agent_did: str
+    agent_name: str
+    agent_type: str
+    description: str | None = None
+    verification_method: str
+    public_key: str
+
+
+class RegisterAgentResponse(BaseModel):
+    agent_did: str
+    agent_name: str
+    agent_type: str
+    description: str | None = None
+    verification_method: str
+    public_key: str
+    status: str
+    created_at: str
+    api_key: str
+
+
+class AgentResponse(BaseModel):
+    agent_did: str
+    agent_name: str
+    agent_type: str
+    description: str | None = None
+    verification_method: str
+    public_key: str
+    status: str
+    created_at: str
