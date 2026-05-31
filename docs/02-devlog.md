@@ -290,3 +290,31 @@ Current limitation:
 Next operational priorities:
 - **Event signatures** and stronger agent identity binding.
 - **Backup strategy** for production SQLite (`VERIAGENT_DB_PATH`) and recovery procedure on the VM.
+
+## 2026-05-31 (v0.9A — Ed25519 signing primitives)
+
+Decisions:
+- Add Ed25519 key generation, base64 encoding, sign, and verify helpers only.
+- Use raw 32-byte Ed25519 keys encoded as base64 (no PEM).
+- Provide temporary demo DID helpers until real `did:key` multibase encoding is implemented.
+- Do not enforce event signatures on `POST /audit/events` in this release.
+
+Implemented:
+- `cryptography` dependency.
+- `backend/app/signatures.py` with keypair generation, base64 key codecs, `sign_bytes`, `verify_signature`, `demo_did_from_public_key`, and `demo_verification_method`.
+- Pytest coverage in `tests/test_signatures.py`.
+
+Tested:
+- Key generation returns valid base64-encoded raw keys.
+- Sign and verify round-trip succeeds.
+- Tampered payload, wrong public key, and malformed signature are rejected cleanly.
+- Demo DID is deterministic; verification method derives as `{agent_did}#keys-1`.
+
+Current limitation:
+- `demo_did_from_public_key` is explicitly temporary (`did:key:demo:<sha256>`), not spec-compliant `did:key`.
+- No event signature enforcement or signed event API yet.
+- Agent registry and ingestion auth unchanged from v0.8.1.
+
+Next operational priorities:
+- **Signed audit events** with verification against registered agent public keys.
+- **Backup strategy** for production SQLite (`VERIAGENT_DB_PATH`) and recovery procedure on the VM.
