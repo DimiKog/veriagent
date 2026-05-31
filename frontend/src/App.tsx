@@ -8,6 +8,7 @@ import {
   createBatch,
   getBatchAnchor,
   getBatchProof,
+  formatStoreEventError,
   getHealth,
   storeAuditEvent,
   verifyMerkleProof,
@@ -39,7 +40,7 @@ function defaultEventPayload(): AuditEvent {
   const suffix = Date.now()
   return {
     event_id: `event-${suffix}`,
-    agent_id: 'agent-001',
+    agent_id: '',
     task_id: 'task-001',
     model_name: 'demo-model',
     tool_calls: ['search', 'calculator'],
@@ -163,12 +164,19 @@ function HashValue({ value }: { value: string }) {
 
 function App() {
   const [workflow, setWorkflow] = useState<WorkflowState>(emptyWorkflowState)
+  const [agentDid, setAgentDid] = useState('')
+  const [agentApiKey, setAgentApiKey] = useState('')
+  const [agentCredentialsReady, setAgentCredentialsReady] = useState(false)
   const [eventForm, setEventForm] = useState<AuditEvent>(defaultEventPayload)
   const [metadataText, setMetadataText] = useState(
     () => JSON.stringify(defaultEventPayload().metadata, null, 2),
   )
 
+  const agentCredentialsFilled =
+    agentDid.trim().length > 0 && agentApiKey.trim().length > 0
+
   const [healthStatus, setHealthStatus] = useState<SectionStatus>({ kind: 'idle' })
+  const [credentialsStatus, setCredentialsStatus] = useState<SectionStatus>({ kind: 'idle' })
   const [eventStatus, setEventStatus] = useState<SectionStatus>({ kind: 'idle' })
   const [batchStatus, setBatchStatus] = useState<SectionStatus>({ kind: 'idle' })
   const [proofStatus, setProofStatus] = useState<SectionStatus>({ kind: 'idle' })
@@ -180,6 +188,26 @@ function App() {
   const updateWorkflow = useCallback((patch: Partial<WorkflowState>) => {
     setWorkflow((current) => ({ ...current, ...patch }))
   }, [])
+
+  const handleAgentDidChange = (value: string) => {
+    setAgentDid(value)
+    setAgentCredentialsReady(false)
+    setCredentialsStatus({ kind: 'idle' })
+  }
+
+  const handleAgentApiKeyChange = (value: string) => {
+    setAgentApiKey(value)
+    setAgentCredentialsReady(false)
+    setCredentialsStatus({ kind: 'idle' })
+  }
+
+  const handleUseAgentCredentials = () => {
+    setAgentCredentialsReady(true)
+    setCredentialsStatus({
+      kind: 'success',
+      message: 'Agent credentials loaded for this session.',
+    })
+  }
 
   /* ── Handlers ── */
 
@@ -198,6 +226,14 @@ function App() {
   }
 
   const handleCreateEvent = async () => {
+    if (!agentCredentialsReady) {
+      setEventStatus({
+        kind: 'error',
+        message: 'Click "Use agent credentials" in step 2 before creating an audit event.',
+      })
+      return
+    }
+
     setEventStatus({ kind: 'loading', message: 'Storing audit event…' })
     try {
       let metadata: Record<string, unknown> | null = null
@@ -211,14 +247,17 @@ function App() {
         return
       }
 
-      const data: StoreEventResponse = await storeAuditEvent({ ...eventForm, metadata })
+      const data: StoreEventResponse = await storeAuditEvent(
+        { ...eventForm, agent_id: agentDid.trim(), metadata },
+        agentApiKey.trim(),
+      )
       updateWorkflow({ event_id: data.event_id, event_hash: data.event_hash })
       setEventStatus({ kind: 'success', message: 'Audit event stored successfully.', data })
       const nextEvent = defaultEventPayload()
       setEventForm(nextEvent)
       setMetadataText(JSON.stringify(nextEvent.metadata, null, 2))
     } catch (error) {
-      setEventStatus({ kind: 'error', message: errorMessage(error) })
+      setEventStatus({ kind: 'error', message: formatStoreEventError(error) })
     }
   }
 
@@ -323,7 +362,7 @@ function App() {
           </div>
           <h1>
             VeriAgent
-            <span className="dashboard__version">v0.7.0</span>
+            <span className="dashboard__version">v0.8.1</span>
           </h1>
           <nav className="dashboard__nav" aria-label="External links">
             <a href={API_DOCS_URL} target="_blank" rel="noopener noreferrer">
@@ -380,22 +419,67 @@ function App() {
           <section className="panel">
             <h2 className="panel__heading">
               <span className="step-badge" aria-label="Step 2">2</span>
+              Agent credentials
+              {agentCredentialsReady && (
+                <span className="badge badge--ok">Ready</span>
+              )}
+            </h2>
+            <p className="panel__helper">
+              Use a registered agent DID and agent API key. Registration is currently done through
+              the admin API.
+            </p>
+            <div className="form-grid">
+              <label>
+                Agent DID
+                <input
+                  value={agentDid}
+                  onChange={(e) => handleAgentDidChange(e.target.value)}
+                  placeholder="did:key:..."
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+              </label>
+              <label>
+                Agent API Key
+                <input
+                  type="password"
+                  value={agentApiKey}
+                  onChange={(e) => handleAgentApiKeyChange(e.target.value)}
+                  placeholder="va_agent_..."
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+              </label>
+            </div>
+            <div className="panel__actions">
+              <button
+                type="button"
+                className="btn btn--primary"
+                onClick={handleUseAgentCredentials}
+                disabled={!agentCredentialsFilled}
+              >
+                Use agent credentials
+              </button>
+            </div>
+            <StatusBox status={credentialsStatus} />
+          </section>
+
+          {/* Step 3 */}
+          <section className="panel">
+            <h2 className="panel__heading">
+              <span className="step-badge" aria-label="Step 3">3</span>
               Create audit event
             </h2>
-            <p>Store a structured audit event and receive a signed ingestion receipt.</p>
+            <p>
+              Store a structured audit event and receive a signed ingestion receipt.{' '}
+              <code>agent_id</code> is taken from the Agent DID above.
+            </p>
             <div className="form-grid">
               <label>
                 Event ID
                 <input
                   value={eventForm.event_id}
                   onChange={(e) => setEventForm((c) => ({ ...c, event_id: e.target.value }))}
-                />
-              </label>
-              <label>
-                Agent ID
-                <input
-                  value={eventForm.agent_id}
-                  onChange={(e) => setEventForm((c) => ({ ...c, agent_id: e.target.value }))}
                 />
               </label>
               <label>
@@ -467,18 +551,23 @@ function App() {
                 type="button"
                 className="btn btn--primary"
                 onClick={handleCreateEvent}
-                disabled={eventStatus.kind === 'loading'}
+                disabled={eventStatus.kind === 'loading' || !agentCredentialsReady}
+                title={
+                  !agentCredentialsReady
+                    ? 'Click "Use agent credentials" in step 2 first'
+                    : undefined
+                }
               >
-                {eventStatus.kind === 'loading' ? 'Storing…' : 'Store event'}
+                {eventStatus.kind === 'loading' ? 'Creating…' : 'Create audit event'}
               </button>
             </div>
             <StatusBox status={eventStatus} />
           </section>
 
-          {/* Step 3 */}
+          {/* Step 4 */}
           <section className="panel">
             <h2 className="panel__heading">
-              <span className="step-badge" aria-label="Step 3">3</span>
+              <span className="step-badge" aria-label="Step 4">4</span>
               Create Merkle batch
             </h2>
             <p>
@@ -498,10 +587,10 @@ function App() {
             <StatusBox status={batchStatus} />
           </section>
 
-          {/* Step 4 */}
+          {/* Step 5 */}
           <section className="panel">
             <h2 className="panel__heading">
-              <span className="step-badge" aria-label="Step 4">4</span>
+              <span className="step-badge" aria-label="Step 5">5</span>
               Retrieve Merkle proof
             </h2>
             <p>
@@ -528,10 +617,10 @@ function App() {
             <StatusBox status={proofStatus} />
           </section>
 
-          {/* Step 5 */}
+          {/* Step 6 */}
           <section className="panel">
             <h2 className="panel__heading">
-              <span className="step-badge" aria-label="Step 5">5</span>
+              <span className="step-badge" aria-label="Step 6">6</span>
               Anchor batch
             </h2>
             <p>
@@ -552,10 +641,10 @@ function App() {
             <StatusBox status={anchorStatus} />
           </section>
 
-          {/* Step 6 */}
+          {/* Step 7 */}
           <section className="panel">
             <h2 className="panel__heading">
-              <span className="step-badge" aria-label="Step 6">6</span>
+              <span className="step-badge" aria-label="Step 7">7</span>
               Show anchor result
             </h2>
             <p>Load the stored anchor record for the current batch from the backend.</p>

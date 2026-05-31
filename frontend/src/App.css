@@ -91,6 +91,13 @@
   color: var(--va-text-faint);
 }
 
+.panel__helper {
+  margin: 0 0 1rem;
+  font-size: 0.9rem;
+  color: var(--va-text-muted);
+  line-height: 1.5;
+}
+
 .dashboard__tagline {
   margin: 0;
   color: var(--va-text-muted);

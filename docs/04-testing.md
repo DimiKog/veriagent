@@ -29,6 +29,7 @@ python -m pytest -v
 | `tests/test_anchoring.py` | On-chain anchor helpers (batch id, metadata hash, ABI loading, config) |
 | `tests/test_batch_anchor_api.py` | Batch anchor API with monkeypatched web3 calls (no Anvil required) |
 | `tests/test_agents_api.py` | Agent registry registration and lookup with admin key auth |
+| `tests/test_audit_event_auth.py` | Agent API key auth for `POST /audit/events` and public endpoint regression |
 
 ## Isolation
 
@@ -105,13 +106,27 @@ Agent registry API tests cover:
 - `404 Not Found` for unregistered agents
 - Stored row contains SHA-256 hash of the issued API key, not the raw key
 
+## Audit event auth tests
+
+Audit ingestion auth tests cover:
+
+- `POST /audit/events` without `X-VeriAgent-API-Key` returns `401`
+- Invalid agent API key returns `401`
+- Valid active agent key stores an event with a verifiable receipt
+- `event.agent_id` mismatch with authenticated agent returns `403`
+- Inactive agent key returns `403`
+- Public endpoints still work without agent key: `GET /health`, `POST /audit/hash`, `GET /audit/events/{event_id}`, `POST /audit/verify`, batch GET/proof, and `POST /audit/merkle/verify`
+
+Shared helpers in `tests/support.py` register a test agent and attach `X-VeriAgent-API-Key` to event submission in API and batch tests.
+
 ## Manual API checks
 
 With the server running (`uvicorn app.main:app --reload`):
 
-1. `POST /audit/events` with a sample audit event.
-2. Confirm the response includes `event_id`, `event_hash`, `created_at`, and `receipt.signature`.
-3. Recompute verification locally using the same secret, or call application code that uses `verify_receipt`.
+1. Register an agent via `POST /agents/register` (admin key required) and save the returned `api_key`.
+2. `POST /audit/events` with a sample audit event and header `X-VeriAgent-API-Key: {api_key}`; set `agent_id` to the registered `agent_did`.
+3. Confirm the response includes `event_id`, `event_hash`, `created_at`, and `receipt.signature`.
+4. Recompute verification locally using the same secret, or call application code that uses `verify_receipt`.
 
 For production-like runs, set a strong secret:
 

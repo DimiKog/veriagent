@@ -5,23 +5,9 @@ from app.hashing import hash_event
 from app.models import AuditEvent
 from app.receipts import verify_receipt
 from tests.conftest import TEST_RECEIPT_SECRET
+from tests.support import post_audit_event, register_test_agent, sample_event_payload
 
 client = TestClient(app)
-
-
-def sample_event_payload(event_id: str = "event-001", output_hash: str = "sha256:output456"):
-    return {
-        "event_id": event_id,
-        "agent_id": "agent-001",
-        "task_id": "task-001",
-        "model_name": "demo-model",
-        "tool_calls": ["search", "calculator"],
-        "input_hash": "sha256:input123",
-        "output_hash": output_hash,
-        "policy_version": "policy-v0.1",
-        "timestamp": "2026-05-26T18:00:00Z",
-        "metadata": {"purpose": "api-test"},
-    }
 
 
 def test_health_endpoint():
@@ -29,7 +15,7 @@ def test_health_endpoint():
 
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
-    assert response.json()["version"] == "0.7.0"
+    assert response.json()["version"] == "0.8.1"
 
 
 def test_audit_hash_endpoint():
@@ -43,9 +29,10 @@ def test_audit_hash_endpoint():
 
 
 def test_store_and_get_audit_event():
+    api_key = register_test_agent(client)
     payload = sample_event_payload()
 
-    store_response = client.post("/audit/events", json=payload)
+    store_response = post_audit_event(client, payload=payload, api_key=api_key)
     assert store_response.status_code == 200
     stored = store_response.json()
     assert stored["event_id"] == "event-001"
@@ -77,10 +64,11 @@ def test_store_and_get_audit_event():
 
 
 def test_store_duplicate_event_returns_409():
+    api_key = register_test_agent(client)
     payload = sample_event_payload(event_id="event-dup")
 
-    assert client.post("/audit/events", json=payload).status_code == 200
-    assert client.post("/audit/events", json=payload).status_code == 409
+    assert post_audit_event(client, payload=payload, api_key=api_key).status_code == 200
+    assert post_audit_event(client, payload=payload, api_key=api_key).status_code == 409
 
 
 def test_get_missing_event_returns_404():
@@ -90,8 +78,9 @@ def test_get_missing_event_returns_404():
 
 
 def test_verify_matching_event():
+    api_key = register_test_agent(client)
     payload = sample_event_payload(event_id="event-verify-ok")
-    client.post("/audit/events", json=payload)
+    post_audit_event(client, payload=payload, api_key=api_key)
 
     response = client.post("/audit/verify", json=payload)
 
@@ -103,8 +92,9 @@ def test_verify_matching_event():
 
 
 def test_verify_tampered_event():
+    api_key = register_test_agent(client)
     payload = sample_event_payload(event_id="event-verify-fail")
-    client.post("/audit/events", json=payload)
+    post_audit_event(client, payload=payload, api_key=api_key)
 
     tampered = sample_event_payload(
         event_id="event-verify-fail",

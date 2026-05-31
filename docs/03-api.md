@@ -10,13 +10,19 @@ Computes the RFC8785/JCS canonical hash of an audit event without storing it.
 
 ## POST /audit/events
 
-Stores an audit event and returns a signed ingestion receipt.
+Stores an audit event and returns a signed ingestion receipt. **Requires a registered active agent.**
+
+Requires header:
+- `X-VeriAgent-API-Key` — per-agent API key issued at registration (`va_agent_...` prefix)
 
 The backend:
-1. canonicalizes the event using RFC8785/JCS,
-2. computes a SHA-256 hash,
-3. stores the canonical event JSON and hash in SQLite,
-4. signs an ingestion receipt with HMAC-SHA256.
+1. authenticates the agent by hashing the provided key and looking up `agents.api_key_hash`,
+2. rejects inactive agents,
+3. requires `event.agent_id` to equal the authenticated agent's `agent_did`,
+4. canonicalizes the event using RFC8785/JCS,
+5. computes a SHA-256 hash,
+6. stores the canonical event JSON and hash in SQLite,
+7. signs an ingestion receipt with HMAC-SHA256.
 
 Returns:
 - `event_id`
@@ -25,6 +31,10 @@ Returns:
 - `receipt` — signed payload containing `event_id`, `event_hash`, `created_at`, `signature`, and `algorithm` (`HMAC-SHA256`)
 
 Receipt signing uses `VERIAGENT_RECEIPT_SECRET`. If unset, a clearly marked development-only fallback secret is used locally.
+
+Returns `401 Unauthorized` when the agent API key is missing or invalid.
+
+Returns `403 Forbidden` when the agent is not `active`, or when `event.agent_id` does not match the authenticated agent's DID.
 
 Duplicate `event_id` values return `409 Conflict`.
 

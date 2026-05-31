@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 from app.anchoring import AnchorTransactionFailedError, AnchoringConfig, OnchainBatch
 from app.main import app
 from app.storage import get_batch_anchor
-from tests.test_api import sample_event_payload
+from tests.support import post_audit_event, register_test_agent, sample_event_payload
 
 client = TestClient(app)
 
@@ -17,7 +17,12 @@ FAKE_CHAIN_TIMESTAMP = 1_700_000_000
 
 
 def _create_batch(event_id: str = "event-anchor-1") -> dict:
-    response = client.post("/audit/events", json=sample_event_payload(event_id=event_id))
+    api_key = register_test_agent(client)
+    response = post_audit_event(
+        client,
+        payload=sample_event_payload(event_id=event_id),
+        api_key=api_key,
+    )
     assert response.status_code == 200
     batch_response = client.post("/audit/batches")
     assert batch_response.status_code == 200

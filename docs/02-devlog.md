@@ -258,3 +258,35 @@ Current limitation:
 Next operational priorities:
 - **Agent API key auth** for `POST /audit/events`.
 - **Backup strategy** for production SQLite (`VERIAGENT_DB_PATH`) and recovery procedure on the VM.
+
+## 2026-05-31 (v0.8.1 — Agent ingestion auth)
+
+Decisions:
+- Protect `POST /audit/events` with registered agent API keys only.
+- Header: `X-VeriAgent-API-Key`; lookup by SHA-256 hash of the provided key.
+- Enforce `event.agent_id == authenticated agent.agent_did`.
+- Reject inactive agents with `403 Forbidden`.
+- Keep public read/verify endpoints open (no auth on GET events, batches, proofs, anchor records, or `POST /audit/hash` / `POST /audit/verify` / `POST /audit/merkle/verify`).
+- No event signatures or DID resolution in this release.
+
+Implemented:
+- `authenticate_agent` dependency in `backend/app/auth.py`.
+- `get_agent_by_api_key_hash` in `backend/app/storage.py`.
+- `POST /audit/events` agent auth and `agent_id` binding.
+- Shared test helpers in `tests/support.py`.
+- Pytest coverage in `tests/test_audit_event_auth.py`; existing API/batch tests updated for agent keys.
+
+Tested:
+- Missing or invalid agent API key returns `401`.
+- Valid active agent stores events with receipts.
+- `agent_id` mismatch and inactive agent return `403`.
+- Public verification/read endpoints still work without agent key.
+
+Current limitation:
+- No cryptographic event signatures tied to agent DIDs.
+- No DID resolution or `public_key` verification.
+- Batch creation and anchoring endpoints remain unauthenticated.
+
+Next operational priorities:
+- **Event signatures** and stronger agent identity binding.
+- **Backup strategy** for production SQLite (`VERIAGENT_DB_PATH`) and recovery procedure on the VM.

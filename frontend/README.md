@@ -2,7 +2,7 @@
 
 Minimal Vite + React + TypeScript dashboard for the VeriAgent audit workflow.
 
-The UI talks to the deployed backend at `https://veriagent.dimikog.org`. It does not handle wallets, private keys, or any secrets — anchoring is performed server-side.
+The UI talks to the deployed backend at `https://veriagent.dimikog.org`. As of **v0.8.1**, storing audit events requires a registered **agent API key** (sent only with `POST /audit/events`). The dashboard never handles admin keys, wallet private keys, or anchor signing secrets — batch anchoring remains server-side.
 
 ## Prerequisites
 
@@ -107,15 +107,27 @@ The Vite `base` path is set to `/veriagent/` in `vite.config.ts` so asset URLs r
 Use the sections in order for a full end-to-end demo:
 
 1. **API health check** — confirm the backend is reachable.
-2. **Create audit event** — store an audit event and capture `event_id` / `event_hash`.
-3. **Create Merkle batch** — batch unbatched events and capture `batch_id` / `merkle_root`.
-4. **Retrieve Merkle proof** — fetch and verify an inclusion proof for the current event.
-5. **Anchor batch** — submit the batch root on chain via the backend.
-6. **Show anchor result** — read the stored anchor record (`tx_hash`, `chain_id`, etc.).
+2. **Agent credentials** — enter the registered **Agent DID** and **Agent API Key** (`va_agent_…`) issued by `POST /agents/register` (admin API only; not available in this UI).
+3. **Create audit event** — store an audit event (`agent_id` = Agent DID) and capture `event_id` / `event_hash`. Requires step 2.
+4. **Create Merkle batch** — batch unbatched events and capture `batch_id` / `merkle_root`.
+5. **Retrieve Merkle proof** — fetch and verify an inclusion proof for the current event.
+6. **Anchor batch** — submit the batch root on chain via the backend.
+7. **Show anchor result** — read the stored anchor record (`tx_hash`, `chain_id`, etc.).
+
+### Agent credentials (v0.8.1)
+
+- **Agent DID** — must match a registered agent (`did:key:…`). Used as `agent_id` on the audit event payload.
+- **Agent API Key** — masked password field; sent only as header `X-VeriAgent-API-Key` on `POST /audit/events`.
+- Credentials live in React state only for the current page session — **not** stored in `localStorage` or `sessionStorage`.
+- **Create audit event** stays disabled until both fields are non-empty.
+- **401** — invalid or missing agent API key.
+- **403** — Agent DID does not match the key, or the agent is inactive.
+
+Agent registration and the admin API key are intentionally **not** exposed in the public dashboard.
 
 The **Current workflow state** sidebar tracks the latest IDs and hashes across steps. Long values are truncated with a **copy** button (full value on hover). When a transaction hash is present and Blockscout is configured, a **View on Blockscout** link appears.
 
-The dashboard uses CSS design tokens and follows the system **dark mode** preference (`prefers-color-scheme`). Workflow panels are numbered steps 1–6 in the main column.
+The dashboard uses CSS design tokens and follows the system **dark mode** preference (`prefers-color-scheme`). Workflow panels are numbered steps 1–7 in the main column.
 
 ## API helper
 

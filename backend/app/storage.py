@@ -514,3 +514,43 @@ def get_agent(
         status=row["status"],
         created_at=row["created_at"],
     )
+
+
+def get_agent_by_api_key_hash(
+    api_key_hash: str,
+    db_path: Path | str | None = None,
+) -> StoredAgent | None:
+    init_db(db_path)
+    with _connect(db_path) as conn:
+        row = conn.execute(
+            """
+            SELECT
+                agent_did,
+                agent_name,
+                agent_type,
+                description,
+                verification_method,
+                public_key,
+                api_key_hash,
+                status,
+                created_at
+            FROM agents
+            WHERE api_key_hash = ?
+            """,
+            (api_key_hash,),
+        ).fetchone()
+
+    if row is None:
+        return None
+
+    return StoredAgent(
+        agent_did=row["agent_did"],
+        agent_name=row["agent_name"],
+        agent_type=row["agent_type"],
+        description=row["description"],
+        verification_method=row["verification_method"],
+        public_key=row["public_key"],
+        api_key_hash=row["api_key_hash"],
+        status=row["status"],
+        created_at=row["created_at"],
+    )

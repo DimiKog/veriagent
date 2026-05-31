@@ -125,11 +125,34 @@ export function getHealth(): Promise<HealthResponse> {
   return request<HealthResponse>('/health')
 }
 
-export function storeAuditEvent(event: AuditEvent): Promise<StoreEventResponse> {
+export function storeAuditEvent(
+  event: AuditEvent,
+  agentApiKey: string,
+): Promise<StoreEventResponse> {
   return request<StoreEventResponse>('/audit/events', {
     method: 'POST',
+    headers: {
+      'X-VeriAgent-API-Key': agentApiKey,
+    },
     body: JSON.stringify(event),
   })
+}
+
+/** User-facing message for POST /audit/events auth failures (v0.8.1+). */
+export function formatStoreEventError(error: unknown): string {
+  if (error instanceof ApiError) {
+    if (error.status === 401) {
+      return 'Invalid or missing agent API key. Register an agent via the admin API and paste the issued key here.'
+    }
+    if (error.status === 403) {
+      return 'The agent DID does not match this API key, or the agent is inactive. Use the registered DID and an active agent key.'
+    }
+    return error.displayMessage
+  }
+  if (error instanceof Error) {
+    return error.message
+  }
+  return 'An unexpected error occurred'
 }
 
 export function createBatch(): Promise<BatchResponse> {

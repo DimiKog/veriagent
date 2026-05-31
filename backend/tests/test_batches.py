@@ -2,7 +2,7 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.merkle import merkle_proof, verify_inclusion_proof
-from tests.test_api import sample_event_payload
+from tests.support import post_audit_event, register_test_agent, sample_event_payload
 
 client = TestClient(app)
 
@@ -14,8 +14,13 @@ def test_create_batch_with_no_events_returns_400():
 
 
 def test_create_and_get_batch():
+    api_key = register_test_agent(client)
     for event_id in ("event-batch-1", "event-batch-2", "event-batch-3"):
-        response = client.post("/audit/events", json=sample_event_payload(event_id=event_id))
+        response = post_audit_event(
+            client,
+            payload=sample_event_payload(event_id=event_id),
+            api_key=api_key,
+        )
         assert response.status_code == 200
 
     create_response = client.post("/audit/batches")
@@ -32,10 +37,19 @@ def test_create_and_get_batch():
 
 
 def test_second_batch_only_includes_new_events():
-    client.post("/audit/events", json=sample_event_payload(event_id="event-new-1"))
+    api_key = register_test_agent(client)
+    post_audit_event(
+        client,
+        payload=sample_event_payload(event_id="event-new-1"),
+        api_key=api_key,
+    )
     first_batch = client.post("/audit/batches").json()
 
-    client.post("/audit/events", json=sample_event_payload(event_id="event-new-2"))
+    post_audit_event(
+        client,
+        payload=sample_event_payload(event_id="event-new-2"),
+        api_key=api_key,
+    )
     second_batch = client.post("/audit/batches").json()
 
     assert first_batch["event_count"] == 1
@@ -44,9 +58,11 @@ def test_second_batch_only_includes_new_events():
 
 
 def test_merkle_verify_endpoint_accepts_valid_proof():
-    store_response = client.post(
-        "/audit/events",
-        json=sample_event_payload(event_id="event-merkle-api"),
+    api_key = register_test_agent(client)
+    store_response = post_audit_event(
+        client,
+        payload=sample_event_payload(event_id="event-merkle-api"),
+        api_key=api_key,
     )
     event_hash = store_response.json()["event_hash"]
 
@@ -69,8 +85,13 @@ def test_merkle_verify_endpoint_accepts_valid_proof():
 
 
 def test_merkle_verify_endpoint_rejects_tampered_proof():
+    api_key = register_test_agent(client)
     for event_id in ("event-merkle-tamper-1", "event-merkle-tamper-2"):
-        client.post("/audit/events", json=sample_event_payload(event_id=event_id))
+        post_audit_event(
+            client,
+            payload=sample_event_payload(event_id=event_id),
+            api_key=api_key,
+        )
 
     event_hash = client.get("/audit/events/event-merkle-tamper-1").json()["event_hash"]
     batch = client.post("/audit/batches").json()
@@ -96,9 +117,13 @@ def test_get_missing_batch_returns_404():
     assert response.status_code == 404
 
 
-def _store_and_batch(event_ids: list[str]) -> tuple[dict, str]:
+def _store_and_batch(event_ids: list[str], api_key: str) -> tuple[dict, str]:
     for event_id in event_ids:
-        response = client.post("/audit/events", json=sample_event_payload(event_id=event_id))
+        response = post_audit_event(
+            client,
+            payload=sample_event_payload(event_id=event_id),
+            api_key=api_key,
+        )
         assert response.status_code == 200
 
     batch = client.post("/audit/batches").json()
@@ -106,7 +131,8 @@ def _store_and_batch(event_ids: list[str]) -> tuple[dict, str]:
 
 
 def test_proof_endpoint_returns_valid_proof_for_included_event():
-    batch, event_id = _store_and_batch(["event-proof-1", "event-proof-2"])
+    api_key = register_test_agent(client)
+    batch, event_id = _store_and_batch(["event-proof-1", "event-proof-2"], api_key)
 
     response = client.get(f"/audit/batches/{batch['batch_id']}/proof/{event_id}")
     assert response.status_code == 200
@@ -123,7 +149,11 @@ def test_proof_endpoint_returns_valid_proof_for_included_event():
 
 
 def test_proof_endpoint_proof_verifies_with_merkle_verify():
-    batch, event_id = _store_and_batch(["event-proof-verify-1", "event-proof-verify-2"])
+    api_key = register_test_agent(client)
+    batch, event_id = _store_and_batch(
+        ["event-proof-verify-1", "event-proof-verify-2"],
+        api_key,
+    )
 
     proof_response = client.get(f"/audit/batches/{batch['batch_id']}/proof/{event_id}")
     body = proof_response.json()
@@ -142,10 +172,19 @@ def test_proof_endpoint_proof_verifies_with_merkle_verify():
 
 
 def test_proof_endpoint_returns_404_when_event_not_in_batch():
-    client.post("/audit/events", json=sample_event_payload(event_id="event-in-batch"))
+    api_key = register_test_agent(client)
+    post_audit_event(
+        client,
+        payload=sample_event_payload(event_id="event-in-batch"),
+        api_key=api_key,
+    )
     batch = client.post("/audit/batches").json()
 
-    client.post("/audit/events", json=sample_event_payload(event_id="event-not-in-batch"))
+    post_audit_event(
+        client,
+        payload=sample_event_payload(event_id="event-not-in-batch"),
+        api_key=api_key,
+    )
 
     response = client.get(
         f"/audit/batches/{batch['batch_id']}/proof/event-not-in-batch",
@@ -161,7 +200,8 @@ def test_proof_endpoint_returns_404_for_missing_batch():
 
 
 def test_proof_endpoint_returns_404_for_missing_event():
-    batch, _ = _store_and_batch(["event-proof-only"])
+    api_key = register_test_agent(client)
+    batch, _ = _store_and_batch(["event-proof-only"], api_key)
 
     response = client.get(
         f"/audit/batches/{batch['batch_id']}/proof/missing-event-id",

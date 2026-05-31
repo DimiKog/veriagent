@@ -1,3 +1,4 @@
+import hmac
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, HTTPException
@@ -8,6 +9,7 @@ from app.merkle import merkle_proof, verify_inclusion_proof
 from app.anchoring import AnchorTransactionFailedError, AnchoringConfigError
 from app.batch_anchoring import BatchNotFoundError, perform_batch_anchor
 from app.auth import (
+    authenticate_agent,
     generate_agent_api_key,
     hash_agent_api_key,
     require_admin_api_key,
@@ -54,7 +56,7 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title="VeriAgent API", version="0.7.0", lifespan=lifespan)
+app = FastAPI(title="VeriAgent API", version="0.8.1", lifespan=lifespan)
 
 CORS_ALLOWED_ORIGINS = [
     "https://dimikog.github.io",
@@ -75,7 +77,7 @@ def health():
     return {
         "status": "ok",
         "service": "veriagent",
-        "version": "0.7.0",
+        "version": "0.8.1",
     }
 
 
@@ -115,7 +117,19 @@ def create_event_hash(event: AuditEvent):
 
 
 @app.post("/audit/events", response_model=StoreEventResponse)
-def store_event(event: AuditEvent):
+def store_event(
+    event: AuditEvent,
+    agent: StoredAgent = Depends(authenticate_agent),
+):
+    if not hmac.compare_digest(
+        event.agent_id.encode("utf-8"),
+        agent.agent_did.encode("utf-8"),
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="event.agent_id does not match authenticated agent",
+        )
+
     canonical_bytes = canonicalize_event(event)
     canonical_event_json = canonical_bytes.decode("utf-8")
     event_hash = hash_event(event)
