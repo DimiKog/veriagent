@@ -10,19 +10,41 @@ Computes the RFC8785/JCS canonical hash of an audit event without storing it.
 
 ## POST /audit/events
 
-Stores an audit event and returns a signed ingestion receipt. **Requires a registered active agent.**
+Stores an audit event and returns a signed ingestion receipt. **Requires a registered active agent with a valid Ed25519 event signature.**
 
 Requires header:
 - `X-VeriAgent-API-Key` — per-agent API key issued at registration (`va_agent_...` prefix)
+
+Request body includes all audit event fields plus:
+
+- `verification_method` — must match the registered agent's verification method (e.g. `{agent_did}#keys-1`)
+- `signature` — base64-encoded Ed25519 signature over the unsigned canonical event
+
+### Signing boundary
+
+The signature is computed over the **RFC8785/JCS canonical JSON of the audit event excluding `signature` and `verification_method`**.
+
+Signed (included in canonical bytes):
+
+- `event_id`, `agent_id`, `task_id`, `model_name`, `tool_calls`, `input_hash`, `output_hash`, `policy_version`, `timestamp`, `metadata`
+
+Not signed (excluded from canonical bytes):
+
+- `signature`
+- `verification_method`
+
+The stored `event_hash` and Merkle leaves continue to use the **unsigned** canonical payload only. Signature metadata is stored separately.
 
 The backend:
 1. authenticates the agent by hashing the provided key and looking up `agents.api_key_hash`,
 2. rejects inactive agents,
 3. requires `event.agent_id` to equal the authenticated agent's `agent_did`,
-4. canonicalizes the event using RFC8785/JCS,
-5. computes a SHA-256 hash,
-6. stores the canonical event JSON and hash in SQLite,
-7. signs an ingestion receipt with HMAC-SHA256.
+4. requires `verification_method` to equal the registered agent's `verification_method`,
+5. canonicalizes the unsigned event using RFC8785/JCS,
+6. verifies the Ed25519 signature against the registered agent `public_key`,
+7. computes a SHA-256 hash of the unsigned canonical event,
+8. stores the unsigned canonical event JSON, hash, and signature metadata in SQLite,
+9. signs an ingestion receipt with HMAC-SHA256.
 
 Returns:
 - `event_id`
@@ -32,11 +54,15 @@ Returns:
 
 Receipt signing uses `VERIAGENT_RECEIPT_SECRET`. If unset, a clearly marked development-only fallback secret is used locally.
 
+Returns `400 Bad Request` when `signature` or `verification_method` is missing.
+
 Returns `401 Unauthorized` when the agent API key is missing or invalid.
 
-Returns `403 Forbidden` when the agent is not `active`, or when `event.agent_id` does not match the authenticated agent's DID.
+Returns `403 Forbidden` when the agent is not `active`, when `event.agent_id` does not match the authenticated agent's DID, when `verification_method` does not match, or when the Ed25519 signature is invalid.
 
 Duplicate `event_id` values return `409 Conflict`.
+
+Signatures are verified **before** storage so invalid or tampered events are never committed.
 
 ## GET /audit/events/{event_id}
 
@@ -45,8 +71,12 @@ Retrieves stored metadata for an audit event.
 Returns:
 - `event_id`
 - `event_hash`
-- `canonical_event_json`
+- `canonical_event_json` — unsigned canonical payload (no `signature` or `verification_method`)
 - `created_at`
+- `verification_method`
+- `signature_algorithm` — `Ed25519`
+
+Does not return the raw event signature or agent public keys.
 
 Missing events return `404 Not Found`.
 

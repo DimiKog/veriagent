@@ -17,6 +17,16 @@ class AuditEvent(BaseModel):
     metadata: dict[str, Any] | None = None
 
 
+class SignedAuditEventRequest(AuditEvent):
+    verification_method: str | None = None
+    signature: str | None = None
+
+    def unsigned_event(self) -> AuditEvent:
+        return AuditEvent(
+            **self.model_dump(exclude={"verification_method", "signature"})
+        )
+
+
 class IngestionReceipt(BaseModel):
     event_id: str
     event_hash: str
@@ -37,6 +47,8 @@ class StoredEventResponse(BaseModel):
     event_hash: str
     canonical_event_json: str
     created_at: str
+    verification_method: str | None = None
+    signature_algorithm: str | None = None
 
 
 class VerifyResponse(BaseModel):

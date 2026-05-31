@@ -5,7 +5,7 @@ from app.hashing import hash_event
 from app.models import AuditEvent
 from app.receipts import verify_receipt
 from tests.conftest import TEST_RECEIPT_SECRET
-from tests.support import post_audit_event, register_test_agent, sample_event_payload
+from tests.support import post_audit_event, register_test_agent, sample_event_payload, SAMPLE_VERIFICATION_METHOD
 
 client = TestClient(app)
 
@@ -15,7 +15,7 @@ def test_health_endpoint():
 
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
-    assert response.json()["version"] == "0.8.1"
+    assert response.json()["version"] == "0.9B"
 
 
 def test_audit_hash_endpoint():
@@ -61,6 +61,8 @@ def test_store_and_get_audit_event():
     assert retrieved["event_hash"] == stored["event_hash"]
     assert retrieved["created_at"] == stored["created_at"]
     assert retrieved["canonical_event_json"]
+    assert retrieved["verification_method"] == SAMPLE_VERIFICATION_METHOD
+    assert retrieved["signature_algorithm"] == "Ed25519"
 
 
 def test_store_duplicate_event_returns_409():

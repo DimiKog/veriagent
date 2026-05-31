@@ -27,11 +27,13 @@ from app.models import (
     MerkleVerifyResponse,
     RegisterAgentRequest,
     RegisterAgentResponse,
+    SignedAuditEventRequest,
     StoreEventResponse,
     StoredEventResponse,
     VerifyResponse,
 )
 from app.receipts import generate_receipt
+from app.signatures import SIGNATURE_ALGORITHM, verify_signature
 from app.storage import (
     AgentAlreadyExistsError,
     EventAlreadyExistsError,
@@ -56,7 +58,7 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title="VeriAgent API", version="0.8.1", lifespan=lifespan)
+app = FastAPI(title="VeriAgent API", version="0.9B", lifespan=lifespan)
 
 CORS_ALLOWED_ORIGINS = [
     "https://dimikog.github.io",
@@ -77,7 +79,7 @@ def health():
     return {
         "status": "ok",
         "service": "veriagent",
-        "version": "0.8.1",
+        "version": "0.9B",
     }
 
 
@@ -118,11 +120,18 @@ def create_event_hash(event: AuditEvent):
 
 @app.post("/audit/events", response_model=StoreEventResponse)
 def store_event(
-    event: AuditEvent,
+    event: SignedAuditEventRequest,
     agent: StoredAgent = Depends(authenticate_agent),
 ):
+    if not event.signature:
+        raise HTTPException(status_code=400, detail="signature is required")
+    if not event.verification_method:
+        raise HTTPException(status_code=400, detail="verification_method is required")
+
+    unsigned_event = event.unsigned_event()
+
     if not hmac.compare_digest(
-        event.agent_id.encode("utf-8"),
+        unsigned_event.agent_id.encode("utf-8"),
         agent.agent_did.encode("utf-8"),
     ):
         raise HTTPException(
@@ -130,15 +139,30 @@ def store_event(
             detail="event.agent_id does not match authenticated agent",
         )
 
-    canonical_bytes = canonicalize_event(event)
+    if not hmac.compare_digest(
+        event.verification_method.encode("utf-8"),
+        agent.verification_method.encode("utf-8"),
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="verification_method does not match registered agent",
+        )
+
+    canonical_bytes = canonicalize_event(unsigned_event)
     canonical_event_json = canonical_bytes.decode("utf-8")
-    event_hash = hash_event(event)
+    event_hash = hash_event(unsigned_event)
+
+    if not verify_signature(agent.public_key, canonical_bytes, event.signature):
+        raise HTTPException(status_code=403, detail="Invalid event signature")
 
     try:
         stored = store_audit_event(
-            event_id=event.event_id,
+            event_id=unsigned_event.event_id,
             canonical_event_json=canonical_event_json,
             event_hash=event_hash,
+            signature=event.signature,
+            verification_method=event.verification_method,
+            signature_algorithm=SIGNATURE_ALGORITHM,
         )
     except EventAlreadyExistsError as exc:
         raise HTTPException(
@@ -172,6 +196,8 @@ def get_stored_event(event_id: str):
         event_hash=stored.event_hash,
         canonical_event_json=stored.canonical_event_json,
         created_at=stored.created_at,
+        verification_method=stored.verification_method,
+        signature_algorithm=stored.signature_algorithm,
     )
 
 

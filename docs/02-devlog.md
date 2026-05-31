@@ -318,3 +318,35 @@ Current limitation:
 Next operational priorities:
 - **Signed audit events** with verification against registered agent public keys.
 - **Backup strategy** for production SQLite (`VERIAGENT_DB_PATH`) and recovery procedure on the VM.
+
+## 2026-05-31 (v0.9B — Signed audit event verification)
+
+Decisions:
+- Require Ed25519 signatures on `POST /audit/events` before storage.
+- Sign the RFC8785/JCS canonical unsigned event (exclude `signature` and `verification_method`).
+- Verify `verification_method` against the registered agent record.
+- Keep Merkle hashing on the unsigned canonical payload unchanged.
+- Store signature metadata separately (`signature`, `verification_method`, `signature_algorithm`).
+- Do not implement real `did:key` derivation, DID resolution, or frontend signing in this release.
+
+Implemented:
+- `SignedAuditEventRequest` model with required `verification_method` and `signature`.
+- Signature verification in `POST /audit/events` after agent API key auth and DID binding.
+- SQLite columns for event signature metadata with migration for existing databases.
+- `GET /audit/events/{event_id}` returns `verification_method` and `signature_algorithm` (not raw signature or public keys).
+- Pytest coverage in `tests/test_signed_audit_events.py`; shared helpers sign events in `tests/support.py`.
+- Demo script `scripts/sign_demo_event.py` for manual signed POST bodies.
+
+Tested:
+- Valid signatures accepted; tampered payload, wrong signature, wrong public key, and wrong verification method rejected with `403`.
+- Missing `signature` or `verification_method` rejected with `400`.
+- Stored events expose signature metadata; receipts and batching unchanged.
+
+Current limitation:
+- Demo DID helpers from v0.9A remain temporary; no DID resolution.
+- Frontend does not yet sign events.
+- Batch creation and anchoring endpoints remain unauthenticated.
+
+Next operational priorities:
+- **Frontend / agent SDK signing** for production ingestion flows.
+- **Backup strategy** for production SQLite (`VERIAGENT_DB_PATH`) and recovery procedure on the VM.

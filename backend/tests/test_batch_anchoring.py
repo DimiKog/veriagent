@@ -4,7 +4,7 @@ from eth_typing import ChecksumAddress
 from app.anchoring import AnchorTransactionFailedError, AnchoringConfig, OnchainBatch
 from app.batch_anchoring import BatchNotFoundError, perform_batch_anchor
 from app.storage import get_batch, get_batch_anchor, store_audit_event
-from tests.test_api import sample_event_payload
+from tests.support import sample_event_payload
 from app.hashing import canonicalize_event, hash_event
 from app.models import AuditEvent
 from app.storage import create_batch_from_unbatched

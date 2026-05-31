@@ -25,6 +25,7 @@ VeriAgent provides a prototype audit pipeline for AI-agent activity:
 - Computes SHA-256 event commitments
 - Stores events locally in SQLite
 - Returns signed HMAC-SHA256 ingestion receipts
+- Requires Ed25519-signed audit events from registered agents (v0.9B)
 - Registers agents by DID with admin-protected onboarding (Phase 6A)
 - Batches event hashes into Merkle trees
 - Generates and verifies Merkle inclusion proofs
@@ -40,7 +41,7 @@ This is a **research prototype**, not a production compliance product.
 - The **backend operator is trusted** in this demo. The API stores events and submits anchor transactions.
 - **SQLite is mutable** before anchoring. Local records can be changed until a batch root is anchored on chain.
 - **Blockchain anchoring** provides a timestamped, public commitment *after* anchoring. It does not prove the underlying agent action occurred.
-- **Event submission requires a registered agent.** `POST /audit/events` accepts events only from active agents that present a valid `X-VeriAgent-API-Key` and set `agent_id` to their registered DID. Public read and verification endpoints remain open.
+- **Event submission requires a registered agent.** `POST /audit/events` accepts events only from active agents that present a valid `X-VeriAgent-API-Key`, set `agent_id` to their registered DID, and sign the unsigned canonical event payload with their registered Ed25519 key. Public read and verification endpoints remain open.
 - **This is not an EU AI Act compliance product.** It demonstrates technical building blocks only.
 
 ## Architecture
@@ -81,6 +82,14 @@ uvicorn app.main:app --reload
 ```
 
 Local API docs: http://127.0.0.1:8000/docs
+
+To generate a signed sample event body for manual testing:
+
+```bash
+python scripts/sign_demo_event.py
+```
+
+See [docs/03-api.md](docs/03-api.md) for the signing boundary (`signature` and `verification_method` are excluded from the canonical payload).
 
 For local anchoring against Anvil or Besu, set `VERIAGENT_RPC_URL`, `VERIAGENT_CHAIN_ID`, `VERIAGENT_ANCHOR_CONTRACT_ADDRESS`, and `VERIAGENT_ANCHOR_PRIVATE_KEY`. See [docs/05-deployment.md](docs/05-deployment.md).
 

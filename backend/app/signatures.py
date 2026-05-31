@@ -5,6 +5,8 @@ from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
 
+SIGNATURE_ALGORITHM = "Ed25519"
+
 
 def generate_ed25519_keypair() -> tuple[str, str]:
     private_key = Ed25519PrivateKey.generate()

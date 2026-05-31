@@ -30,6 +30,8 @@ python -m pytest -v
 | `tests/test_batch_anchor_api.py` | Batch anchor API with monkeypatched web3 calls (no Anvil required) |
 | `tests/test_agents_api.py` | Agent registry registration and lookup with admin key auth |
 | `tests/test_audit_event_auth.py` | Agent API key auth for `POST /audit/events` and public endpoint regression |
+| `tests/test_signatures.py` | Ed25519 key generation, signing, verification, and demo DID helpers |
+| `tests/test_signed_audit_events.py` | Ed25519 event signature enforcement on ingestion and stored metadata |
 
 ## Isolation
 
@@ -50,7 +52,7 @@ Receipt unit tests cover:
 - Rejection of signatures produced with a different secret
 - Development fallback secret when `VERIAGENT_RECEIPT_SECRET` is unset
 
-API tests assert that `POST /audit/events` returns a verifiable receipt and that `GET /audit/events/{event_id}` still returns stored metadata including `canonical_event_json`.
+API tests assert that `POST /audit/events` returns a verifiable receipt and that `GET /audit/events/{event_id}` still returns stored metadata including `canonical_event_json`, `verification_method`, and `signature_algorithm`.
 
 ## Merkle batch tests
 
@@ -117,16 +119,40 @@ Audit ingestion auth tests cover:
 - Inactive agent key returns `403`
 - Public endpoints still work without agent key: `GET /health`, `POST /audit/hash`, `GET /audit/events/{event_id}`, `POST /audit/verify`, batch GET/proof, and `POST /audit/merkle/verify`
 
-Shared helpers in `tests/support.py` register a test agent and attach `X-VeriAgent-API-Key` to event submission in API and batch tests.
+Shared helpers in `tests/support.py` register a test agent, sign the unsigned canonical event payload, and attach `X-VeriAgent-API-Key` to event submission in API and batch tests.
+
+## Signed audit event tests
+
+Signed event tests cover:
+
+- Valid Ed25519 signature accepted for a registered agent
+- Tampered unsigned payload rejected (`403`)
+- Wrong signature, wrong public key, and wrong `verification_method` rejected (`403`)
+- Missing `signature` or `verification_method` rejected (`400`)
+- Stored events retain signature metadata in SQLite; GET exposes `verification_method` and `signature_algorithm`
+- HMAC ingestion receipts still verify after signed ingestion
+- Merkle batching still works for signed events
+
+Signing boundary under test: RFC8785/JCS bytes of the audit event **without** `signature` or `verification_method`. The event hash and Merkle leaves use that same unsigned canonical payload.
+
+Manual signing helper:
+
+```bash
+python scripts/sign_demo_event.py
+```
+
+Optionally set `VERIAGENT_DEMO_PRIVATE_KEY` to reuse a demo Ed25519 private key (base64 raw bytes).
 
 ## Manual API checks
 
 With the server running (`uvicorn app.main:app --reload`):
 
-1. Register an agent via `POST /agents/register` (admin key required) and save the returned `api_key`.
-2. `POST /audit/events` with a sample audit event and header `X-VeriAgent-API-Key: {api_key}`; set `agent_id` to the registered `agent_did`.
-3. Confirm the response includes `event_id`, `event_hash`, `created_at`, and `receipt.signature`.
-4. Recompute verification locally using the same secret, or call application code that uses `verify_receipt`.
+1. Register an agent via `POST /agents/register` (admin key required) and save the returned `api_key`, `agent_did`, `verification_method`, and `public_key`.
+2. Build a signed request body (unsigned event fields + `verification_method` + Ed25519 `signature` over the unsigned RFC8785/JCS canonical bytes). Use `python scripts/sign_demo_event.py` for a sample payload.
+3. `POST /audit/events` with the signed audit event and header `X-VeriAgent-API-Key: {api_key}`; set `agent_id` to the registered `agent_did`.
+4. Confirm the response includes `event_id`, `event_hash`, `created_at`, and `receipt.signature`.
+5. `GET /audit/events/{event_id}` should include `verification_method` and `signature_algorithm`.
+6. Recompute receipt verification locally using the same secret, or call application code that uses `verify_receipt`.
 
 For production-like runs, set a strong secret:
 

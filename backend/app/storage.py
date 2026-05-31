@@ -29,6 +29,9 @@ class StoredAuditEvent:
     canonical_event_json: str
     event_hash: str
     created_at: str
+    signature: str | None = None
+    verification_method: str | None = None
+    signature_algorithm: str | None = None
 
 
 @dataclass(frozen=True)
@@ -88,6 +91,18 @@ def _connect(db_path: Path | str | None = None) -> sqlite3.Connection:
     return conn
 
 
+def _migrate_audit_events_table(conn: sqlite3.Connection) -> None:
+    columns = {
+        row[1] for row in conn.execute("PRAGMA table_info(audit_events)").fetchall()
+    }
+    if "signature" not in columns:
+        conn.execute("ALTER TABLE audit_events ADD COLUMN signature TEXT")
+    if "verification_method" not in columns:
+        conn.execute("ALTER TABLE audit_events ADD COLUMN verification_method TEXT")
+    if "signature_algorithm" not in columns:
+        conn.execute("ALTER TABLE audit_events ADD COLUMN signature_algorithm TEXT")
+
+
 def init_db(db_path: Path | str | None = None) -> None:
     with _connect(db_path) as conn:
         conn.execute(
@@ -96,10 +111,14 @@ def init_db(db_path: Path | str | None = None) -> None:
                 event_id TEXT PRIMARY KEY,
                 canonical_event_json TEXT NOT NULL,
                 event_hash TEXT NOT NULL,
-                created_at TEXT NOT NULL
+                created_at TEXT NOT NULL,
+                signature TEXT,
+                verification_method TEXT,
+                signature_algorithm TEXT
             )
             """
         )
+        _migrate_audit_events_table(conn)
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS audit_batches (
@@ -159,6 +178,9 @@ def store_audit_event(
     event_id: str,
     canonical_event_json: str,
     event_hash: str,
+    signature: str | None = None,
+    verification_method: str | None = None,
+    signature_algorithm: str | None = None,
     db_path: Path | str | None = None,
 ) -> StoredAuditEvent:
     init_db(db_path)
@@ -168,10 +190,24 @@ def store_audit_event(
             conn.execute(
                 """
                 INSERT INTO audit_events (
-                    event_id, canonical_event_json, event_hash, created_at
-                ) VALUES (?, ?, ?, ?)
+                    event_id,
+                    canonical_event_json,
+                    event_hash,
+                    created_at,
+                    signature,
+                    verification_method,
+                    signature_algorithm
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
-                (event_id, canonical_event_json, event_hash, created_at),
+                (
+                    event_id,
+                    canonical_event_json,
+                    event_hash,
+                    created_at,
+                    signature,
+                    verification_method,
+                    signature_algorithm,
+                ),
             )
             conn.commit()
     except sqlite3.IntegrityError as exc:
@@ -182,6 +218,21 @@ def store_audit_event(
         canonical_event_json=canonical_event_json,
         event_hash=event_hash,
         created_at=created_at,
+        signature=signature,
+        verification_method=verification_method,
+        signature_algorithm=signature_algorithm,
+    )
+
+
+def _stored_audit_event_from_row(row: sqlite3.Row) -> StoredAuditEvent:
+    return StoredAuditEvent(
+        event_id=row["event_id"],
+        canonical_event_json=row["canonical_event_json"],
+        event_hash=row["event_hash"],
+        created_at=row["created_at"],
+        signature=row["signature"],
+        verification_method=row["verification_method"],
+        signature_algorithm=row["signature_algorithm"],
     )
 
 
@@ -193,7 +244,14 @@ def get_audit_event(
     with _connect(db_path) as conn:
         row = conn.execute(
             """
-            SELECT event_id, canonical_event_json, event_hash, created_at
+            SELECT
+                event_id,
+                canonical_event_json,
+                event_hash,
+                created_at,
+                signature,
+                verification_method,
+                signature_algorithm
             FROM audit_events
             WHERE event_id = ?
             """,
@@ -203,12 +261,7 @@ def get_audit_event(
     if row is None:
         return None
 
-    return StoredAuditEvent(
-        event_id=row["event_id"],
-        canonical_event_json=row["canonical_event_json"],
-        event_hash=row["event_hash"],
-        created_at=row["created_at"],
-    )
+    return _stored_audit_event_from_row(row)
 
 
 def list_unbatched_events(db_path: Path | str | None = None) -> list[StoredAuditEvent]:
@@ -216,7 +269,14 @@ def list_unbatched_events(db_path: Path | str | None = None) -> list[StoredAudit
     with _connect(db_path) as conn:
         rows = conn.execute(
             """
-            SELECT e.event_id, e.canonical_event_json, e.event_hash, e.created_at
+            SELECT
+                e.event_id,
+                e.canonical_event_json,
+                e.event_hash,
+                e.created_at,
+                e.signature,
+                e.verification_method,
+                e.signature_algorithm
             FROM audit_events e
             LEFT JOIN batch_events b ON e.event_id = b.event_id
             WHERE b.event_id IS NULL
@@ -224,15 +284,7 @@ def list_unbatched_events(db_path: Path | str | None = None) -> list[StoredAudit
             """
         ).fetchall()
 
-    return [
-        StoredAuditEvent(
-            event_id=row["event_id"],
-            canonical_event_json=row["canonical_event_json"],
-            event_hash=row["event_hash"],
-            created_at=row["created_at"],
-        )
-        for row in rows
-    ]
+    return [_stored_audit_event_from_row(row) for row in rows]
 
 
 def create_batch_from_unbatched(db_path: Path | str | None = None) -> StoredBatch:
