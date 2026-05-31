@@ -141,7 +141,9 @@ Manual signing helper:
 python scripts/sign_demo_event.py
 ```
 
-Optionally set `VERIAGENT_DEMO_PRIVATE_KEY` to reuse a demo Ed25519 private key (base64 raw bytes).
+Each run generates unique `event_id` and `task_id` values by default (format: `demo-event-<UTC timestamp>-<short uuid>` and `task-demo-<UTC timestamp>-<short uuid>`), so repeated manual POST tests do not hit duplicate `event_id` conflicts.
+
+Set `VERIAGENT_DEMO_PRIVATE_KEY` to reuse the same demo agent identity (`agent_did`, `verification_method`, and `public_key`) across runs while still emitting fresh event and task IDs.
 
 ## Manual API checks
 

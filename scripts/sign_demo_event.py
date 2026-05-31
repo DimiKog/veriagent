@@ -6,6 +6,8 @@ from __future__ import annotations
 import json
 import os
 import sys
+import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1] / "backend"
@@ -21,6 +23,16 @@ from app.signatures import (  # noqa: E402
     sign_bytes,
 )
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey  # noqa: E402
+
+
+def generate_demo_event_id() -> str:
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return f"demo-event-{stamp}-{uuid.uuid4().hex[:8]}"
+
+
+def generate_demo_task_id() -> str:
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return f"task-demo-{stamp}-{uuid.uuid4().hex[:8]}"
 
 
 def load_private_key_base64() -> tuple[str, str]:
@@ -47,9 +59,9 @@ def main() -> int:
     verification_method = demo_verification_method(agent_did)
 
     event = AuditEvent(
-        event_id="demo-event-001",
+        event_id=generate_demo_event_id(),
         agent_id=agent_did,
-        task_id="task-demo-001",
+        task_id=generate_demo_task_id(),
         model_name="demo-model",
         tool_calls=["search"],
         input_hash="sha256:demo-input",

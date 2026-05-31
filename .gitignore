@@ -3,6 +3,7 @@ backend/data/
 __pycache__/
 .pytest_cache/
 .env
+scripts/demo_agent.env
 *.pyc
 .DS_Store
 contracts/out/
