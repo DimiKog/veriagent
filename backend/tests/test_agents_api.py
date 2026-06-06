@@ -1,33 +1,23 @@
 from fastapi.testclient import TestClient
 
 from app.auth import AGENT_API_KEY_PREFIX, hash_agent_api_key
+from app.signatures import generate_ed25519_keypair
 from app.main import app
 from tests.conftest import TEST_ADMIN_API_KEY
+from tests.support import (
+    SAMPLE_AGENT_DID,
+    SAMPLE_VERIFICATION_METHOD,
+    TEST_PUBLIC_KEY_B64,
+    sample_agent_register_payload,
+)
 
 client = TestClient(app)
-
-SAMPLE_AGENT_DID = "did:key:z6MkhaXgBZDv9FIm5N9EJ9R9Bz"
-SAMPLE_VERIFICATION_METHOD = f"{SAMPLE_AGENT_DID}#z6MkhaXgBZDv9FIm5N9EJ9R9Bz"
-
-
-def sample_agent_payload(
-    agent_did: str = SAMPLE_AGENT_DID,
-    verification_method: str = SAMPLE_VERIFICATION_METHOD,
-):
-    return {
-        "agent_did": agent_did,
-        "agent_name": "Test Agent",
-        "agent_type": "llm-agent",
-        "description": "A test agent",
-        "verification_method": verification_method,
-        "public_key": "z6MkhaXgBZDv9FIm5N9EJ9R9Bz",
-    }
 
 
 def register_agent_request(payload=None, admin_key=TEST_ADMIN_API_KEY):
     return client.post(
         "/agents/register",
-        json=payload or sample_agent_payload(),
+        json=payload or sample_agent_register_payload(),
         headers={"X-VeriAgent-Admin-Key": admin_key},
     )
 
@@ -42,7 +32,7 @@ def test_register_agent_success():
     assert body["agent_type"] == "llm-agent"
     assert body["description"] == "A test agent"
     assert body["verification_method"] == SAMPLE_VERIFICATION_METHOD
-    assert body["public_key"] == "z6MkhaXgBZDv9FIm5N9EJ9R9Bz"
+    assert body["public_key"] == TEST_PUBLIC_KEY_B64
     assert body["status"] == "active"
     assert body["created_at"]
     assert body["api_key"].startswith(AGENT_API_KEY_PREFIX)
@@ -50,7 +40,9 @@ def test_register_agent_success():
 
 
 def test_register_agent_missing_admin_key_rejected():
-    response = client.post("/agents/register", json=sample_agent_payload())
+    response = client.post(
+        "/agents/register", json=sample_agent_register_payload()
+    )
 
     assert response.status_code == 401
     assert response.json()["detail"] == "Invalid or missing admin API key"
@@ -74,17 +66,48 @@ def test_register_agent_duplicate_did_rejected():
 
 def test_register_agent_invalid_did_rejected():
     response = register_agent_request(
-        payload=sample_agent_payload(agent_did="not-a-did")
+        payload=sample_agent_register_payload(agent_did="not-a-did")
     )
 
     assert response.status_code == 400
-    assert "did:key:" in response.json()["detail"]
+    assert "did:key" in response.json()["detail"]
+
+
+def test_register_agent_deprecated_demo_did_rejected():
+    response = register_agent_request(
+        payload=sample_agent_register_payload(agent_did="did:key:demo:abc123")
+    )
+
+    assert response.status_code == 400
+    assert "did:key" in response.json()["detail"]
 
 
 def test_register_agent_invalid_verification_method_rejected():
     response = register_agent_request(
-        payload=sample_agent_payload(
+        payload=sample_agent_register_payload(
             verification_method="did:key:other#fragment"
+        )
+    )
+
+    assert response.status_code == 400
+    assert "verification_method" in response.json()["detail"]
+
+
+def test_register_agent_mismatched_public_key_rejected():
+    _, other_public_key_b64 = generate_ed25519_keypair()
+
+    response = register_agent_request(
+        payload=sample_agent_register_payload(public_key=other_public_key_b64)
+    )
+
+    assert response.status_code == 400
+    assert "public_key does not match agent_did" in response.json()["detail"]
+
+
+def test_register_agent_wrong_verification_method_rejected():
+    response = register_agent_request(
+        payload=sample_agent_register_payload(
+            verification_method=f"{SAMPLE_AGENT_DID}#wrong-fragment"
         )
     )
 

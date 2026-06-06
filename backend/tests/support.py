@@ -1,16 +1,16 @@
 from app.hashing import canonicalize_event
 from app.models import AuditEvent
 from app.signatures import (
-    demo_did_from_public_key,
-    demo_verification_method,
+    ed25519_public_key_to_did_key,
     generate_ed25519_keypair,
     sign_bytes,
+    verification_method_for_did_key,
 )
 from tests.conftest import TEST_ADMIN_API_KEY
 
 TEST_PRIVATE_KEY_B64, TEST_PUBLIC_KEY_B64 = generate_ed25519_keypair()
-SAMPLE_AGENT_DID = demo_did_from_public_key(TEST_PUBLIC_KEY_B64)
-SAMPLE_VERIFICATION_METHOD = demo_verification_method(SAMPLE_AGENT_DID)
+SAMPLE_AGENT_DID = ed25519_public_key_to_did_key(TEST_PUBLIC_KEY_B64)
+SAMPLE_VERIFICATION_METHOD = verification_method_for_did_key(SAMPLE_AGENT_DID)
 
 
 def sample_agent_register_payload(

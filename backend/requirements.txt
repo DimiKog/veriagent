@@ -1,3 +1,4 @@
+base58==2.1.1
 cryptography==44.0.3
 fastapi==0.136.3
 uvicorn==0.48.0

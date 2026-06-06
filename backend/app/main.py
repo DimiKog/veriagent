@@ -33,7 +33,11 @@ from app.models import (
     VerifyResponse,
 )
 from app.receipts import generate_receipt
-from app.signatures import SIGNATURE_ALGORITHM, verify_signature
+from app.signatures import (
+    SIGNATURE_ALGORITHM,
+    validate_ed25519_did_key_agent,
+    verify_signature,
+)
 from app.storage import (
     AgentAlreadyExistsError,
     EventAlreadyExistsError,
@@ -323,18 +327,14 @@ def register_agent_endpoint(
     request: RegisterAgentRequest,
     _: None = Depends(require_admin_api_key),
 ):
-    if not request.agent_did.startswith("did:key:"):
-        raise HTTPException(
-            status_code=400,
-            detail="agent_did must start with 'did:key:'",
+    try:
+        validate_ed25519_did_key_agent(
+            request.agent_did,
+            request.public_key,
+            request.verification_method,
         )
-
-    expected_verification_prefix = f"{request.agent_did}#"
-    if not request.verification_method.startswith(expected_verification_prefix):
-        raise HTTPException(
-            status_code=400,
-            detail="verification_method must start with agent_did followed by '#'",
-        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     api_key = generate_agent_api_key()
     api_key_hash = hash_agent_api_key(api_key)

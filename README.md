@@ -26,7 +26,7 @@ VeriAgent provides a prototype audit pipeline for AI-agent activity:
 - Stores events locally in SQLite
 - Returns signed HMAC-SHA256 ingestion receipts
 - Requires Ed25519-signed audit events from registered agents (v0.9B)
-- Registers agents by DID with admin-protected onboarding (Phase 6A)
+- Registers agents by real Ed25519 `did:key` identifiers with admin-protected onboarding (v0.9.2)
 - Batches event hashes into Merkle trees
 - Generates and verifies Merkle inclusion proofs
 - Anchors Merkle roots on Besu via `VeriAgentAnchor`
@@ -83,11 +83,13 @@ uvicorn app.main:app --reload
 
 Local API docs: http://127.0.0.1:8000/docs
 
-To generate a signed sample event body for manual testing:
+To generate a signed sample event body for manual testing (emits a real `did:key:z...` agent identity):
 
 ```bash
 python scripts/sign_demo_event.py
 ```
+
+Agent DIDs use spec-compliant Ed25519 `did:key` encoding (`did:key:z...` with multibase public key). The legacy `did:key:demo:<sha256>` format is deprecated. `did:key` does not support key rotation by itself; agent revocation and status remain in VeriAgent's internal registry.
 
 See [docs/03-api.md](docs/03-api.md) for the signing boundary (`signature` and `verification_method` are excluded from the canonical payload).
 

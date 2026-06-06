@@ -36,8 +36,11 @@ Implemented:
 - DID metadata storage with per-agent API keys (SHA-256 hash only at rest).
 - Constant-time admin key comparison via `hmac.compare_digest`.
 
+Partially implemented (v0.9.2):
+- Ed25519 `public_key` is validated against the `agent_did` `did:key` encoding at registration (no network DID resolution).
+
 Not yet implemented (at Phase 6A):
-- DID resolution or verification of `public_key` against a DID document on chain or in a registry.
+- DID resolution over the network or verification against an external DID document on chain.
 
 ## v0.8.1 (partial)
 
@@ -46,8 +49,11 @@ Implemented:
 - Lookup by SHA-256 hash; inactive agents rejected.
 - `event.agent_id` must match authenticated agent DID (constant-time string compare).
 
+Partially implemented (v0.9.2):
+- `public_key` validated against Ed25519 `did:key` encoding at registration.
+
 Not yet implemented:
-- DID resolution or verification of `public_key` against a DID document.
+- DID resolution over the network.
 - Auth on batch creation, anchoring, or other operator endpoints.
 
 ## v0.9B (partial)
@@ -59,9 +65,12 @@ Implemented:
 - Invalid signatures rejected before SQLite storage.
 - Signature metadata stored with the event; Merkle commitments remain on unsigned canonical hashes.
 
+Partially implemented (v0.9.2):
+- Real Ed25519 `did:key` multibase encoding (`did:key:z...`); legacy `did:key:demo:...` is deprecated.
+- `public_key` and `verification_method` validated against `agent_did` at registration.
+
 Not yet implemented:
-- Real `did:key` multibase encoding (demo DID helpers only).
-- DID resolution.
+- DID resolution over the network (`did:key` does not support key rotation by itself; revocation/status is via VeriAgent's internal registry).
 - Frontend or agent SDK signing integration.
 - Auth on batch creation, anchoring, or other operator endpoints.
 

@@ -4,7 +4,13 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.receipts import verify_receipt
-from app.signatures import SIGNATURE_ALGORITHM, generate_ed25519_keypair, sign_bytes
+from app.signatures import (
+    SIGNATURE_ALGORITHM,
+    ed25519_public_key_to_did_key,
+    generate_ed25519_keypair,
+    sign_bytes,
+    verification_method_for_did_key,
+)
 from app.storage import get_audit_event
 from tests.conftest import TEST_RECEIPT_SECRET
 from tests.support import (
@@ -62,11 +68,22 @@ def test_wrong_signature_rejected():
 
 
 def test_wrong_public_key_rejected():
-    other_private_key, other_public_key = generate_ed25519_keypair()
-    api_key = register_test_agent(client, public_key=other_public_key)
+    _, other_public_key = generate_ed25519_keypair()
+    other_agent_did = ed25519_public_key_to_did_key(other_public_key)
+    other_verification_method = verification_method_for_did_key(other_agent_did)
+    api_key = register_test_agent(
+        client,
+        agent_did=other_agent_did,
+        public_key=other_public_key,
+        verification_method=other_verification_method,
+    )
     payload = sign_event_payload(
-        sample_event_payload(event_id="event-wrong-key"),
+        sample_event_payload(
+            event_id="event-wrong-key",
+            agent_id=other_agent_did,
+        ),
         private_key_b64=TEST_PRIVATE_KEY_B64,
+        verification_method=other_verification_method,
     )
 
     response = post_audit_event(client, payload=payload, api_key=api_key)

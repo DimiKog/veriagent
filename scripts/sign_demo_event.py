@@ -16,11 +16,11 @@ sys.path.insert(0, str(BACKEND_ROOT))
 from app.hashing import canonicalize_event  # noqa: E402
 from app.models import AuditEvent  # noqa: E402
 from app.signatures import (  # noqa: E402
-    demo_did_from_public_key,
-    demo_verification_method,
+    ed25519_public_key_to_did_key,
     generate_ed25519_keypair,
     public_key_to_base64,
     sign_bytes,
+    verification_method_for_did_key,
 )
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey  # noqa: E402
 
@@ -55,8 +55,8 @@ def load_private_key_base64() -> tuple[str, str]:
 
 def main() -> int:
     private_key_b64, public_key_b64 = load_private_key_base64()
-    agent_did = demo_did_from_public_key(public_key_b64)
-    verification_method = demo_verification_method(agent_did)
+    agent_did = ed25519_public_key_to_did_key(public_key_b64)
+    verification_method = verification_method_for_did_key(agent_did)
 
     event = AuditEvent(
         event_id=generate_demo_event_id(),

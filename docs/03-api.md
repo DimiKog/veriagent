@@ -17,7 +17,7 @@ Requires header:
 
 Request body includes all audit event fields plus:
 
-- `verification_method` — must match the registered agent's verification method (e.g. `{agent_did}#keys-1`)
+- `verification_method` — must match the registered agent's verification method (e.g. `{agent_did}#{multibase_value}` for Ed25519 `did:key`)
 - `signature` — base64-encoded Ed25519 signature over the unsigned canonical event
 
 ### Signing boundary
@@ -190,15 +190,15 @@ Requires header:
 - `X-VeriAgent-Admin-Key` — must match `VERIAGENT_ADMIN_API_KEY`
 
 Request body:
-- `agent_did` — must start with `did:key:`
+- `agent_did` — must be a valid Ed25519 `did:key` (`did:key:z...`)
 - `agent_name`
 - `agent_type` — e.g. `llm-agent`
 - `description` — optional
-- `verification_method` — must start with `{agent_did}#`
-- `public_key`
+- `verification_method` — must equal `{agent_did}#{multibase_value}` (e.g. `did:key:z6Mk...#z6Mk...`)
+- `public_key` — base64-encoded raw 32-byte Ed25519 public key; must match the key encoded in `agent_did`
 
 Behavior:
-1. validates `agent_did` and `verification_method` format,
+1. validates `agent_did` is a decodable Ed25519 `did:key`, that `public_key` matches the DID-encoded key, and that `verification_method` is derived correctly,
 2. generates a per-agent API key with prefix `va_agent_`,
 3. stores only the SHA-256 hash of the API key,
 4. sets `status` to `active`,
@@ -217,7 +217,9 @@ Returns:
 
 Returns `401 Unauthorized` when the admin key is missing or invalid.
 
-Returns `400 Bad Request` for invalid `agent_did` or `verification_method`.
+Returns `400 Bad Request` for invalid `agent_did`, mismatched `public_key`, or incorrect `verification_method`. Legacy `did:key:demo:...` identifiers are rejected.
+
+`did:key` does not support key rotation by itself. Agent revocation and status are handled by VeriAgent's internal agent registry, not by DID resolution over the network.
 
 Returns `409 Conflict` when `agent_did` is already registered.
 

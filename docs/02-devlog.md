@@ -416,11 +416,45 @@ register agent → signed audit event → HMAC receipt → Merkle batch
 
 ### Current limitation
 
-- Demo DID helpers (`did:key:demo:<sha256>`) are temporary; no spec-compliant `did:key` or DID resolution.
 - Dashboard stores events with agent API key only; client-side Ed25519 signing for the dashboard workflow is not implemented yet — use the admin API + `scripts/sign_demo_event.py` (or an agent SDK) for signed ingestion.
 - Batch creation and anchoring endpoints remain unauthenticated.
+- No DID resolution over the network; `did:key` does not support key rotation by itself — revocation and status remain in VeriAgent's internal agent registry.
 
 ### Next operational priorities
 
+- **Frontend / agent SDK signing** for dashboard and production agent ingestion.
+- **Backup strategy** for production SQLite (`VERIAGENT_DB_PATH`) and recovery procedure on the VM.
+
+## 2026-06-06 (v0.9.2 — Real Ed25519 did:key)
+
+Decisions:
+- Replace temporary `did:key:demo:<sha256>` identifiers with spec-compliant Ed25519 `did:key` (`did:key:z...`).
+- Encode Ed25519 public keys with multicodec prefix `0xed 0x01` and base58btc multibase (`z`).
+- Derive verification method as `{did}#{multibase_value}`.
+- Validate `public_key` and `verification_method` against `agent_did` at registration.
+- Keep deprecated demo helpers only for backward-compat unit tests; do not use in `sign_demo_event.py`.
+- Do not implement DID resolution over the network or blockchain anchoring changes.
+
+Implemented:
+- `base58` dependency.
+- `ed25519_public_key_to_did_key`, `did_key_to_ed25519_public_key`, `verification_method_for_did_key`, and `validate_ed25519_did_key_agent` in `backend/app/signatures.py`.
+- Registration validation in `POST /agents/register`.
+- `scripts/sign_demo_event.py` emits real `did:key:z...` values.
+- Pytest coverage for encoding round-trip, invalid DID rejection, registration binding, and demo script output.
+
+Tested:
+- Ed25519 public key converts to `did:key` and decodes back.
+- Verification method `{did}#{multibase_value}` is correct.
+- Invalid prefix, multicodec, and key length rejected.
+- Registration rejects mismatched `public_key` and wrong `verification_method`.
+- `sign_demo_event.py` emits `did:key:z...` not `did:key:demo:...`.
+
+Current limitation:
+- `did:key:demo:...` is deprecated and rejected at registration.
+- `did:key` does not support key rotation by itself; agent revocation/status is internal to VeriAgent.
+- No DID resolution over the network.
+- Frontend and agent SDK signing unchanged.
+
+Next operational priorities:
 - **Frontend / agent SDK signing** for dashboard and production agent ingestion.
 - **Backup strategy** for production SQLite (`VERIAGENT_DB_PATH`) and recovery procedure on the VM.

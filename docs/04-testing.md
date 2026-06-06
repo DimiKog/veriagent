@@ -28,9 +28,9 @@ python -m pytest -v
 | `tests/test_api.py` | FastAPI endpoints including receipt responses |
 | `tests/test_anchoring.py` | On-chain anchor helpers (batch id, metadata hash, ABI loading, config) |
 | `tests/test_batch_anchor_api.py` | Batch anchor API with monkeypatched web3 calls (no Anvil required) |
-| `tests/test_agents_api.py` | Agent registry registration and lookup with admin key auth |
+| `tests/test_agents_api.py` | Agent registry registration, Ed25519 `did:key` binding validation, and lookup with admin key auth |
 | `tests/test_audit_event_auth.py` | Agent API key auth for `POST /audit/events` and public endpoint regression |
-| `tests/test_signatures.py` | Ed25519 key generation, signing, verification, and demo DID helpers |
+| `tests/test_signatures.py` | Ed25519 key generation, signing, verification, real `did:key` encoding/decoding, and deprecated demo DID helpers |
 | `tests/test_signed_audit_events.py` | Ed25519 event signature enforcement on ingestion and stored metadata |
 
 ## Isolation
@@ -103,7 +103,7 @@ Agent registry API tests cover:
 - Successful registration with admin key; response includes raw `api_key` with `va_agent_` prefix
 - `401 Unauthorized` when admin key is missing or invalid
 - `409 Conflict` for duplicate `agent_did`
-- `400 Bad Request` for invalid `agent_did` or `verification_method`
+- `400 Bad Request` for invalid `agent_did`, deprecated `did:key:demo:...`, mismatched `public_key`, or wrong `verification_method`
 - `GET /agents/{agent_did}` returns metadata without `api_key_hash` or raw `api_key`
 - `404 Not Found` for unregistered agents
 - Stored row contains SHA-256 hash of the issued API key, not the raw key
@@ -143,7 +143,9 @@ python scripts/sign_demo_event.py
 
 Each run generates unique `event_id` and `task_id` values by default (format: `demo-event-<UTC timestamp>-<short uuid>` and `task-demo-<UTC timestamp>-<short uuid>`), so repeated manual POST tests do not hit duplicate `event_id` conflicts.
 
-Set `VERIAGENT_DEMO_PRIVATE_KEY` to reuse the same demo agent identity (`agent_did`, `verification_method`, and `public_key`) across runs while still emitting fresh event and task IDs.
+Set `VERIAGENT_DEMO_PRIVATE_KEY` to reuse the same agent identity (`agent_did` as `did:key:z...`, `verification_method`, and `public_key`) across runs while still emitting fresh event and task IDs.
+
+`sign_demo_event.py` emits real Ed25519 `did:key` identifiers (`did:key:z...`), not deprecated `did:key:demo:...` values.
 
 ## Manual API checks
 
