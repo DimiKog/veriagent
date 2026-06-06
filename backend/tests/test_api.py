@@ -15,7 +15,7 @@ def test_health_endpoint():
 
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
-    assert response.json()["version"] == "0.9B"
+    assert response.json()["version"] == "0.9.0"
 
 
 def test_audit_hash_endpoint():

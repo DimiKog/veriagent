@@ -362,7 +362,7 @@ function App() {
           </div>
           <h1>
             VeriAgent
-            <span className="dashboard__version">v0.8.1</span>
+            <span className="dashboard__version">v0.9.0</span>
           </h1>
           <nav className="dashboard__nav" aria-label="External links">
             <a href={API_DOCS_URL} target="_blank" rel="noopener noreferrer">

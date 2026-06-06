@@ -350,3 +350,77 @@ Current limitation:
 Next operational priorities:
 - **Frontend / agent SDK signing** for production ingestion flows.
 - **Backup strategy** for production SQLite (`VERIAGENT_DB_PATH`) and recovery procedure on the VM.
+
+## 2026-06-06 (v0.9.0 — End-to-End Verifiable Audit Chain)
+
+Release tag: `v0.9.0`
+
+### Changelog
+
+**v0.9.0 – End-to-End Verifiable Audit Chain**
+
+- Agent Registry
+- API Key Authentication
+- Signed Audit Events (Ed25519)
+- Signature Verification
+- HMAC Receipts
+- Merkle Batching
+- Merkle Proof Generation
+- Merkle Proof Verification
+- Besu Smart Contract Anchoring
+- Frontend Dashboard
+- Production Deployment (`https://veriagent.dimikog.org`)
+
+**Status:** End-to-end trust chain validated on Besu chain `424242`.
+
+### Decisions
+
+- Treat v0.9.0 as the first release where the full audit pipeline is wired together: registered agent identity, signed ingestion, Merkle batching, and Besu anchoring.
+- Agent onboarding remains admin-protected (`VERIAGENT_ADMIN_API_KEY`); ingestion uses per-agent API keys (`X-VeriAgent-API-Key`).
+- Event signatures use Ed25519 over the unsigned RFC8785/JCS canonical payload; Merkle leaves and `event_hash` remain on the unsigned payload only.
+- Public read, verify, batch, proof, and anchor lookup endpoints stay open; only `POST /audit/events` and agent registration require credentials.
+- Production demo surface unchanged: GitHub Pages dashboard + VM API + Besu Edu-Net `VeriAgentAnchor`.
+
+### Implemented (cumulative through v0.9.0)
+
+- **Agent registry** — `POST /agents/register`, `GET /agents/{agent_did}`; SHA-256 hashed API keys; admin key auth.
+- **API key authentication** — `POST /audit/events` requires valid active agent key and `agent_id` binding.
+- **Signed audit events** — Ed25519 primitives (`signatures.py`), required `signature` + `verification_method` on ingestion, SQLite signature metadata.
+- **HMAC receipts** — ingestion receipts on successful store (`receipts.py`).
+- **Merkle batching** — incremental batches, sorted leaves, odd-leaf duplication (`merkle.py`).
+- **Merkle proofs** — `GET /audit/batches/{batch_id}/proof/{event_id}` and `POST /audit/merkle/verify`.
+- **Besu anchoring** — `VeriAgentAnchor` on Besu Edu-Net; `POST /audit/batches/{batch_id}/anchor` via `web3.py`.
+- **Frontend dashboard** — workflow UI at `https://dimikog.github.io/veriagent/` (agent credential step for ingestion).
+- **Production deployment** — API at `https://veriagent.dimikog.org` (Nginx, systemd, HTTPS).
+
+### Tested
+
+- Full pytest suite (hashing, storage, receipts, Merkle, batches, anchoring mocks, agent registry, ingestion auth, Ed25519 primitives, signed event enforcement).
+- Manual signed ingestion via `scripts/sign_demo_event.py`.
+- Production end-to-end flow on Besu chain ID `424242`:
+
+```text
+register agent → signed audit event → HMAC receipt → Merkle batch
+  → inclusion proof → Besu anchor (VeriAgentAnchor) → Blockscout tx
+```
+
+### Public endpoints (v0.9.0)
+
+| Resource | URL |
+|----------|-----|
+| API | `https://veriagent.dimikog.org` |
+| API docs | `https://veriagent.dimikog.org/docs` |
+| Dashboard | `https://dimikog.github.io/veriagent/` |
+| Block explorer | `https://blockexplorer.dimikog.org/` |
+| Contract | `0x30546417E83A0C96bf87BEdfEe59De8FBdf1187A` (Besu Edu-Net, chain `424242`) |
+
+### Current limitation
+
+- Demo DID helpers (`did:key:demo:<sha256>`) are temporary; no spec-compliant `did:key` or DID resolution.
+- Dashboard stores events with agent API key only; client-side Ed25519 signing for the dashboard workflow is not implemented yet — use the admin API + `scripts/sign_demo_event.py` (or an agent SDK) for signed ingestion.
+- Batch creation and anchoring endpoints remain unauthenticated.
+
+### Next operational priorities
+
+- **Frontend / agent SDK signing** for dashboard and production agent ingestion.
+- **Backup strategy** for production SQLite (`VERIAGENT_DB_PATH`) and recovery procedure on the VM.

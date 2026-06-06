@@ -1,15 +1,15 @@
 # Deployment Guide
 
-VeriAgent is developed locally first. This guide documents what is deployed today (public demo **v0.7**), how each component is published, and how to validate or troubleshoot releases.
+VeriAgent is developed locally first. This guide documents what is deployed today (public demo **v0.9.0**), how each component is published, and how to validate or troubleshoot releases.
 
-## Public demo (v0.7)
+## Public demo (v0.9.0)
 
 | Component | URL | Notes |
 |-----------|-----|--------|
 | Dashboard | https://dimikog.github.io/veriagent/ | GitHub Pages; Vite `base` is `/veriagent/` |
 | API | https://veriagent.dimikog.org | FastAPI behind Nginx on a Linux VM |
 | API docs | https://veriagent.dimikog.org/docs | Swagger UI at `/docs` (not `/api/docs`) |
-| Health | https://veriagent.dimikog.org/health | Returns `version: "0.7.0"` after backend redeploy |
+| Health | https://veriagent.dimikog.org/health | Returns `version: "0.9.0"` after backend redeploy |
 | Block explorer | https://blockexplorer.dimikog.org/ | Blockscout; contract and txs verified on Besu Edu-Net |
 | Besu RPC (operator) | https://rpc.dimikog.org/rpc/ | Used by Foundry deploy and backend anchoring |
 
@@ -33,22 +33,25 @@ Linux VM
    +-- SQLite (backend/data/ or VERIAGENT_DB_PATH)
    +-- VERIAGENT_* secrets via .env / environment (never in git)
 
-Besu Edu-Net
+Besu Edu-Net (chain ID 424242)
    +-- VeriAgentAnchor @ 0x30546417E83A0C96bf87BEdfEe59De8FBdf1187A
 ```
 
-## What shipped in v0.7
+## What shipped in v0.9.0
 
 Summary of deployment-relevant work (detail in [docs/02-devlog.md](02-devlog.md)):
 
-- **Public dashboard** — Vite + React workflow UI (steps 1–6), design tokens, system dark mode, workflow sidebar with truncated hashes and copy buttons.
-- **CORS** — FastAPI allowlist for `https://dimikog.github.io` and local Vite origins so the Pages app can call the production API.
-- **Block explorer links** — `BLOCKSCOUT_TX_BASE` in `frontend/src/api/client.ts` (`https://blockexplorer.dimikog.org/tx/`); **View on Blockscout** in the sidebar when `tx_hash` is set.
-- **API version** — `/health` and OpenAPI metadata use `0.7.0` (aligned with dashboard header badge).
-- **GitHub Pages pipeline** — `.github/workflows/deploy-frontend.yml` builds on push to `master` and publishes `frontend/dist/` to the **`gh-pages`** branch.
-- **Documentation** — Root README, this guide, [docs/04-testing.md](04-testing.md) dashboard checklist, [frontend/README.md](../frontend/README.md).
+- **End-to-end verifiable audit chain** — registered agent → signed event → HMAC receipt → Merkle batch → proof → Besu anchor; validated on Besu chain `424242`.
+- **Agent registry** — admin-protected `POST /agents/register`; per-agent API keys for ingestion.
+- **Signed audit events** — Ed25519 signatures required on `POST /audit/events`; public verify/read endpoints unchanged.
+- **Public dashboard** — Vite + React workflow UI with agent credential step; batch, proof, and anchor steps; design tokens, dark mode, workflow sidebar.
+- **CORS** — FastAPI allowlist for `https://dimikog.github.io` and local Vite origins.
+- **Block explorer links** — `BLOCKSCOUT_TX_BASE` in `frontend/src/api/client.ts`; **View on Blockscout** when `tx_hash` is set.
+- **API version** — `/health` and OpenAPI metadata target `0.9.0` (align dashboard header badge on redeploy).
+- **GitHub Pages pipeline** — `.github/workflows/deploy-frontend.yml` publishes `frontend/dist/` to **`gh-pages`**.
+- **Documentation** — Root README, this guide, [docs/04-testing.md](04-testing.md), [frontend/README.md](../frontend/README.md).
 
-The frontend **never** holds private keys; anchoring is server-side only.
+The frontend **never** holds admin keys, wallet private keys, or anchor signing secrets. Anchoring is server-side only. Signed event ingestion from the dashboard UI is not implemented yet — agents sign via API or `scripts/sign_demo_event.py`.
 
 ---
 
@@ -69,8 +72,9 @@ Optional example Nginx site config: [`deploy/nginx-veriagent-api.conf.example`](
 | Variable | Purpose |
 |----------|---------|
 | `VERIAGENT_RECEIPT_SECRET` | HMAC secret for ingestion receipts |
+| `VERIAGENT_ADMIN_API_KEY` | Admin key for `POST /agents/register` (`X-VeriAgent-Admin-Key`) — **never commit** |
 | `VERIAGENT_RPC_URL` | JSON-RPC for anchoring (Anvil or Besu) |
-| `VERIAGENT_CHAIN_ID` | Chain ID for signing |
+| `VERIAGENT_CHAIN_ID` | Chain ID for signing (Besu Edu-Net: `424242`) |
 | `VERIAGENT_ANCHOR_CONTRACT_ADDRESS` | Deployed `VeriAgentAnchor` (Besu: `0x30546417E83A0C96bf87BEdfEe59De8FBdf1187A`) |
 | `VERIAGENT_ANCHOR_PRIVATE_KEY` | Owner key for `anchorBatch` — **never commit** |
 
@@ -92,7 +96,7 @@ Store secrets in a gitignored `.env` on the host or your secrets manager.
 curl -s https://veriagent.dimikog.org/health | jq .
 ```
 
-Expected includes `"version": "0.7.0"`. If you still see `0.5.0`, the running process was not restarted after the version bump.
+Expected includes `"version": "0.9.0"`. If you still see `0.7.0` or older, the running process was not restarted after the version bump.
 
 6. Verify CORS for the dashboard (see [CORS](#cors-browser-frontend) below).
 
@@ -208,15 +212,15 @@ Live check — page source should load JS/CSS under `/veriagent/assets/` that ex
 
 Use https://dimikog.github.io/veriagent/ in order:
 
-1. **API health check** — expect healthy status and API `0.7.0`.
-2. **Create audit event** — `event_id` / `event_hash` in sidebar.
+1. **API health check** — expect healthy status and API `0.9.0`.
+2. **Agent credentials** — registered agent DID + `va_agent_...` API key (signed event storage via API/script until dashboard signing ships).
 3. **Create Merkle batch** — `batch_id` / `merkle_root`.
 4. **Retrieve Merkle proof** — verification success in status panel.
-5. **Anchor batch** — requires production anchoring env on VM; then `tx_hash` in sidebar.
+5. **Anchor batch** — requires production anchoring env on VM (`VERIAGENT_CHAIN_ID=424242`); then `tx_hash` in sidebar.
 6. **Show anchor result** — stored anchor metadata.
 7. **View on Blockscout** — opens `https://blockexplorer.dimikog.org/tx/{hash}`.
 
-Full API-level steps: [docs/04-testing.md](04-testing.md).
+Full signed-ingestion and API-level steps: [docs/04-testing.md](04-testing.md).
 
 ---
 
@@ -311,7 +315,7 @@ A second `POST .../anchor` on the same batch returns `already_anchored: true` wi
 
 ### Local backend testing against Besu
 
-1. Set anchoring env vars to Besu RPC and `0x30546417E83A0C96bf87BEdfEe59De8FBdf1187A`.
+1. Set anchoring env vars to Besu RPC, `VERIAGENT_CHAIN_ID=424242`, and contract `0x30546417E83A0C96bf87BEdfEe59De8FBdf1187A`.
 2. Run the audit batch flow locally.
 3. Anchor and confirm the tx on https://blockexplorer.dimikog.org/.
 4. Optionally mirror the flow on the public dashboard after VM anchoring is configured.
@@ -322,17 +326,19 @@ Validate locally before changing production keys or contract addresses on the VM
 
 ## Release checklist
 
-Use this after a tagged demo release (e.g. v0.7):
+Use this after a tagged demo release (e.g. v0.9.0):
 
 | # | Check |
 |---|--------|
-| 1 | `master` pushed; backend tests green on VM after pull |
-| 2 | Backend restarted; `/health` shows `0.7.0` |
-| 3 | CORS preflight and `access-control-allow-origin` for `https://dimikog.github.io` |
-| 4 | Frontend workflow succeeded; `gh-pages` has fresh `index.html` + assets |
-| 5 | Pages settings: branch `gh-pages`, folder `/ (root)` |
-| 6 | https://dimikog.github.io/veriagent/ shows new UI and health step reports `0.7.0` |
-| 7 | After anchor test: **View on Blockscout** opens the correct tx URL |
+| 1 | Tag pushed (e.g. `v0.9.0`); `master` on VM; backend tests green after pull |
+| 2 | `VERIAGENT_RECEIPT_SECRET`, `VERIAGENT_ADMIN_API_KEY`, and Besu anchoring env vars set on VM |
+| 3 | Backend restarted; `/health` shows `0.9.0` |
+| 4 | CORS preflight and `access-control-allow-origin` for `https://dimikog.github.io` |
+| 5 | Agent registration works with admin key; signed `POST /audit/events` accepts registered agent payloads |
+| 6 | Frontend workflow succeeded; `gh-pages` has fresh `index.html` + assets |
+| 7 | Pages settings: branch `gh-pages`, folder `/ (root)` |
+| 8 | https://dimikog.github.io/veriagent/ health step reports `0.9.0` |
+| 9 | Full chain on Besu `424242`: signed event → batch → proof → anchor; **View on Blockscout** opens correct tx URL |
 
 ---
 
@@ -350,4 +356,7 @@ When `contracts/src/VeriAgentAnchor.sol` changes:
 ## What is not in scope yet
 
 - Production VM automation / IaC for VeriAgent
-- DID/VC, ZKP, authentication, and OpenTelemetry
+- Spec-compliant `did:key` derivation, DID resolution, and VC/ZKP
+- Dashboard client-side Ed25519 signing (use API + `scripts/sign_demo_event.py` for now)
+- SQLite backup/recovery automation on the VM
+- OpenTelemetry and authenticated batch/anchor endpoints

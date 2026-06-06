@@ -163,15 +163,29 @@ export VERIAGENT_RECEIPT_SECRET="replace-with-a-long-random-secret"
 export VERIAGENT_ADMIN_API_KEY="replace-with-a-long-random-admin-key"
 ```
 
-## Dashboard end-to-end check
+## Production end-to-end check (v0.9.0)
+
+Full trust-chain validation requires **signed** event ingestion. The dashboard alone cannot complete step 2 until client-side Ed25519 signing is added; use the [manual API checks](#manual-api-checks) (or `scripts/sign_demo_event.py`) for signed ingestion, then continue batching and anchoring via the dashboard or API.
+
+### Signed ingestion + chain validation
+
+1. Register an agent via `POST /agents/register` with `X-VeriAgent-Admin-Key`; save `api_key`, `agent_did`, `verification_method`, and `public_key`.
+2. Build a signed body with `python scripts/sign_demo_event.py` (set `VERIAGENT_DEMO_PRIVATE_KEY` to reuse the same agent identity across runs).
+3. `POST /audit/events` with `X-VeriAgent-API-Key` and the signed payload; confirm `receipt.signature` verifies.
+4. `POST /audit/batches` — note `batch_id` and `merkle_root`.
+5. `GET /audit/batches/{batch_id}/proof/{event_id}` — confirm proof verifies via `POST /audit/merkle/verify`.
+6. `POST /audit/batches/{batch_id}/anchor` — requires Besu anchoring env on the API host (`VERIAGENT_CHAIN_ID=424242` for Besu Edu-Net); confirm `tx_hash`.
+7. Open `https://blockexplorer.dimikog.org/tx/{tx_hash}` and confirm the anchor transaction on chain `424242`.
+
+### Dashboard end-to-end check
 
 With the [public dashboard](https://dimikog.github.io/veriagent/) and API at `https://veriagent.dimikog.org`:
 
-1. **API health check** — expect a healthy response with API version.
-2. **Create audit event** — confirm `event_id` and `event_hash` appear in the workflow sidebar.
-3. **Create Merkle batch** — confirm `batch_id` and `merkle_root`.
+1. **API health check** — expect a healthy response with API version `0.9.0`.
+2. **Agent credentials** — enter a registered agent DID and `va_agent_...` API key; click **Use agent credentials**. (Signed ingestion from the dashboard UI is not available yet — complete event storage via the signed API flow above, then use the dashboard for batch/proof/anchor steps.)
+3. **Create Merkle batch** — confirm `batch_id` and `merkle_root` in the workflow sidebar.
 4. **Retrieve Merkle proof** — confirm verification succeeds in the status panel.
-5. **Anchor batch** — requires production backend Besu anchoring env vars; confirm `tx_hash` in the sidebar.
+5. **Anchor batch** — requires production backend Besu anchoring env vars (`VERIAGENT_CHAIN_ID=424242`); confirm `tx_hash` in the sidebar.
 6. **Show anchor result** — confirm stored anchor metadata matches step 5.
 7. After anchoring, open **View on Blockscout** (links to `https://blockexplorer.dimikog.org/tx/{hash}`).
 
