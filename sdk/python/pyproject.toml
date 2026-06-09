@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "veriagent"
+version = "0.9.4"
+description = "Minimal Python SDK for submitting signed VeriAgent audit events"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "base58>=2.1.1",
+    "cryptography>=44.0.0",
+    "httpx>=0.28.0",
+    "jcs>=0.2.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=9.0.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["veriagent*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
