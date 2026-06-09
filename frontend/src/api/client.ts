@@ -1,12 +1,12 @@
 import type {
   AnchorBatchResponse,
-  AuditEvent,
   BatchAnchorRecord,
   BatchProofResponse,
   BatchResponse,
   HealthResponse,
   MerkleProofStep,
   MerkleVerifyResponse,
+  SignedAuditEvent,
   StoreEventResponse,
 } from '../types'
 
@@ -126,7 +126,7 @@ export function getHealth(): Promise<HealthResponse> {
 }
 
 export function storeAuditEvent(
-  event: AuditEvent,
+  event: SignedAuditEvent,
   agentApiKey: string,
 ): Promise<StoreEventResponse> {
   return request<StoreEventResponse>('/audit/events', {
@@ -138,14 +138,23 @@ export function storeAuditEvent(
   })
 }
 
-/** User-facing message for POST /audit/events auth failures (v0.8.1+). */
+/** User-facing message for POST /audit/events auth and signature failures. */
 export function formatStoreEventError(error: unknown): string {
   if (error instanceof ApiError) {
     if (error.status === 401) {
       return 'Invalid or missing agent API key. Register an agent via the admin API and paste the issued key here.'
     }
     if (error.status === 403) {
-      return 'The agent DID does not match this API key, or the agent is inactive. Use the registered DID and an active agent key.'
+      if (error.detail === 'Invalid event signature') {
+        return 'Invalid event signature. The signed canonical payload did not verify against the registered agent key. Check Agent DID, private key, and event fields.'
+      }
+      if (error.detail === 'verification_method does not match registered agent') {
+        return 'verification_method does not match the registered agent. Re-run "Use agent credentials" with the correct Agent DID and private key.'
+      }
+      if (error.detail === 'event.agent_id does not match authenticated agent') {
+        return 'event.agent_id does not match the authenticated agent. Use the Agent DID that matches this API key.'
+      }
+      return 'Request forbidden. Check that Agent DID, API key, private key, and verification_method match the registered agent.'
     }
     return error.displayMessage
   }

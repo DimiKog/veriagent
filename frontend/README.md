@@ -2,7 +2,7 @@
 
 Minimal Vite + React + TypeScript dashboard for the VeriAgent audit workflow.
 
-The UI talks to the deployed backend at `https://veriagent.dimikog.org`. As of **v0.8.1**, storing audit events requires a registered **agent API key** (sent only with `POST /audit/events`). The dashboard never handles admin keys, wallet private keys, or anchor signing secrets — batch anchoring remains server-side.
+The UI talks to the deployed backend at `https://veriagent.dimikog.org`. As of **v0.9.3**, storing audit events requires a registered **agent API key**, a matching **Agent DID**, and an **Ed25519 signature** over the unsigned canonical event payload. The dashboard can sign events in the browser for demo purposes. It never handles admin keys, wallet private keys, or anchor signing secrets — batch anchoring remains server-side.
 
 ## Prerequisites
 
@@ -107,21 +107,28 @@ The Vite `base` path is set to `/veriagent/` in `vite.config.ts` so asset URLs r
 Use the sections in order for a full end-to-end demo:
 
 1. **API health check** — confirm the backend is reachable.
-2. **Agent credentials** — enter the registered **Agent DID** and **Agent API Key** (`va_agent_…`) issued by `POST /agents/register` (admin API only; not available in this UI).
-3. **Create audit event** — store an audit event (`agent_id` = Agent DID) and capture `event_id` / `event_hash`. Requires step 2.
+2. **Agent credentials** — enter the registered **Agent DID**, **Agent API Key** (`va_agent_…`), and **Agent Private Key** (base64 Ed25519 seed, demo mode). Click **Use agent credentials** to derive the public key, verify the DID matches, and compute `verification_method`.
+3. **Create signed audit event** — build an unsigned event, canonicalize and sign it in the browser, then submit with `X-VeriAgent-API-Key`. Requires step 2.
 4. **Create Merkle batch** — batch unbatched events and capture `batch_id` / `merkle_root`.
 5. **Retrieve Merkle proof** — fetch and verify an inclusion proof for the current event.
 6. **Anchor batch** — submit the batch root on chain via the backend.
 7. **Show anchor result** — read the stored anchor record (`tx_hash`, `chain_id`, etc.).
 
-### Agent credentials (v0.8.1)
+### Frontend signed event demo (v0.9.3)
 
-- **Agent DID** — must match a registered agent (`did:key:…`). Used as `agent_id` on the audit event payload.
+- **Agent DID** — registered `did:key:z…` identifier. Used as `agent_id` on the audit event payload. Must match the public key derived from the demo private key.
 - **Agent API Key** — masked password field; sent only as header `X-VeriAgent-API-Key` on `POST /audit/events`.
-- Credentials live in React state only for the current page session — **not** stored in `localStorage` or `sessionStorage`.
-- **Create audit event** stays disabled until both fields are non-empty.
+- **Agent Private Key** — base64-encoded 32-byte Ed25519 seed. Used only in demo mode to sign events in the browser. **Not** persisted to `localStorage` or `sessionStorage`; kept in React state for the current page session only.
+- **Signing boundary** — the browser signs the RFC 8785 / JCS canonical JSON of the unsigned event (fields only; `signature` and `verification_method` are excluded). Implementation lives in `src/utils/canonicalize.ts`; the Python backend remains the source of truth.
+- **did:key helpers** — `src/utils/didKey.ts` mirrors backend behavior: multicodec prefix `0xed 0x01`, base58btc, `did:key:z…`, and `verification_method` = `DID#multibase`.
+- Production agents should normally sign outside the browser (agent runtime, CI, or an SDK). This UI exposes demo signing so you can walk through the full workflow without a separate signer.
+
+### Agent credentials validation
+
+- **Use agent credentials** requires all three fields.
+- The UI derives the Ed25519 public key from the private key, builds the expected `did:key`, and marks credentials **Ready** only when it matches the pasted Agent DID.
 - **401** — invalid or missing agent API key.
-- **403** — Agent DID does not match the key, or the agent is inactive.
+- **403** — agent/DID/key mismatch, wrong `verification_method`, or invalid event signature.
 
 Agent registration and the admin API key are intentionally **not** exposed in the public dashboard.
 

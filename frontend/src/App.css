@@ -98,6 +98,14 @@
   line-height: 1.5;
 }
 
+.field-hint {
+  display: block;
+  margin-top: 0.35rem;
+  font-size: 0.8rem;
+  color: var(--va-text-faint);
+  line-height: 1.4;
+}
+
 .dashboard__tagline {
   margin: 0;
   color: var(--va-text-muted);

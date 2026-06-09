@@ -24,6 +24,9 @@ import type {
   WorkflowState,
 } from './types'
 import { emptyWorkflowState } from './types'
+import { validateAgentCredentials } from './utils/credentials'
+import { DidKeyError } from './utils/didKey'
+import { signAuditEvent } from './utils/signEvent'
 import './App.css'
 
 /* ── Types ───────────────────────────────────────────── */
@@ -166,6 +169,8 @@ function App() {
   const [workflow, setWorkflow] = useState<WorkflowState>(emptyWorkflowState)
   const [agentDid, setAgentDid] = useState('')
   const [agentApiKey, setAgentApiKey] = useState('')
+  const [agentPrivateKey, setAgentPrivateKey] = useState('')
+  const [agentVerificationMethod, setAgentVerificationMethod] = useState('')
   const [agentCredentialsReady, setAgentCredentialsReady] = useState(false)
   const [eventForm, setEventForm] = useState<AuditEvent>(defaultEventPayload)
   const [metadataText, setMetadataText] = useState(
@@ -173,7 +178,9 @@ function App() {
   )
 
   const agentCredentialsFilled =
-    agentDid.trim().length > 0 && agentApiKey.trim().length > 0
+    agentDid.trim().length > 0 &&
+    agentApiKey.trim().length > 0 &&
+    agentPrivateKey.trim().length > 0
 
   const [healthStatus, setHealthStatus] = useState<SectionStatus>({ kind: 'idle' })
   const [credentialsStatus, setCredentialsStatus] = useState<SectionStatus>({ kind: 'idle' })
@@ -192,21 +199,48 @@ function App() {
   const handleAgentDidChange = (value: string) => {
     setAgentDid(value)
     setAgentCredentialsReady(false)
+    setAgentVerificationMethod('')
     setCredentialsStatus({ kind: 'idle' })
   }
 
   const handleAgentApiKeyChange = (value: string) => {
     setAgentApiKey(value)
     setAgentCredentialsReady(false)
+    setAgentVerificationMethod('')
     setCredentialsStatus({ kind: 'idle' })
   }
 
-  const handleUseAgentCredentials = () => {
-    setAgentCredentialsReady(true)
-    setCredentialsStatus({
-      kind: 'success',
-      message: 'Agent credentials loaded for this session.',
-    })
+  const handleAgentPrivateKeyChange = (value: string) => {
+    setAgentPrivateKey(value)
+    setAgentCredentialsReady(false)
+    setAgentVerificationMethod('')
+    setCredentialsStatus({ kind: 'idle' })
+  }
+
+  const handleUseAgentCredentials = async () => {
+    setCredentialsStatus({ kind: 'loading', message: 'Validating agent credentials…' })
+    try {
+      const { verificationMethod } = await validateAgentCredentials(
+        agentDid,
+        agentPrivateKey,
+      )
+      setAgentVerificationMethod(verificationMethod)
+      setAgentCredentialsReady(true)
+      setCredentialsStatus({
+        kind: 'success',
+        message: 'Agent credentials validated. DID and private key match.',
+      })
+    } catch (error) {
+      setAgentCredentialsReady(false)
+      setAgentVerificationMethod('')
+      const message =
+        error instanceof DidKeyError
+          ? error.message
+          : error instanceof Error
+            ? error.message
+            : 'Could not validate agent credentials.'
+      setCredentialsStatus({ kind: 'error', message })
+    }
   }
 
   /* ── Handlers ── */
@@ -234,7 +268,7 @@ function App() {
       return
     }
 
-    setEventStatus({ kind: 'loading', message: 'Storing audit event…' })
+    setEventStatus({ kind: 'loading', message: 'Signing and storing audit event…' })
     try {
       let metadata: Record<string, unknown> | null = null
       try {
@@ -247,16 +281,34 @@ function App() {
         return
       }
 
+      const unsignedEvent: AuditEvent = {
+        ...eventForm,
+        agent_id: agentDid.trim(),
+        metadata,
+      }
+      const signedEvent = await signAuditEvent(
+        unsignedEvent,
+        agentPrivateKey,
+        agentVerificationMethod,
+      )
       const data: StoreEventResponse = await storeAuditEvent(
-        { ...eventForm, agent_id: agentDid.trim(), metadata },
+        signedEvent,
         agentApiKey.trim(),
       )
       updateWorkflow({ event_id: data.event_id, event_hash: data.event_hash })
-      setEventStatus({ kind: 'success', message: 'Audit event stored successfully.', data })
+      setEventStatus({
+        kind: 'success',
+        message: 'Signed audit event stored successfully.',
+        data,
+      })
       const nextEvent = defaultEventPayload()
       setEventForm(nextEvent)
       setMetadataText(JSON.stringify(nextEvent.metadata, null, 2))
     } catch (error) {
+      if (error instanceof DidKeyError) {
+        setEventStatus({ kind: 'error', message: error.message })
+        return
+      }
       setEventStatus({ kind: 'error', message: formatStoreEventError(error) })
     }
   }
@@ -362,7 +414,7 @@ function App() {
           </div>
           <h1>
             VeriAgent
-            <span className="dashboard__version">v0.9.0</span>
+            <span className="dashboard__version">v0.9.3</span>
           </h1>
           <nav className="dashboard__nav" aria-label="External links">
             <a href={API_DOCS_URL} target="_blank" rel="noopener noreferrer">
@@ -425,8 +477,9 @@ function App() {
               )}
             </h2>
             <p className="panel__helper">
-              Use a registered agent DID and agent API key. Registration is currently done through
-              the admin API.
+              Use a registered agent DID, agent API key, and demo private key. Registration is
+              currently done through the admin API. The private key stays in memory for this page
+              session only.
             </p>
             <div className="form-grid">
               <label>
@@ -434,7 +487,7 @@ function App() {
                 <input
                   value={agentDid}
                   onChange={(e) => handleAgentDidChange(e.target.value)}
-                  placeholder="did:key:..."
+                  placeholder="did:key:z..."
                   autoComplete="off"
                   spellCheck={false}
                 />
@@ -450,15 +503,29 @@ function App() {
                   spellCheck={false}
                 />
               </label>
+              <label>
+                Agent Private Key (base64, demo mode)
+                <input
+                  type="password"
+                  value={agentPrivateKey}
+                  onChange={(e) => handleAgentPrivateKeyChange(e.target.value)}
+                  placeholder="Base64 Ed25519 seed"
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+                <span className="field-hint">
+                  Demo mode only. Do not paste production private keys.
+                </span>
+              </label>
             </div>
             <div className="panel__actions">
               <button
                 type="button"
                 className="btn btn--primary"
-                onClick={handleUseAgentCredentials}
-                disabled={!agentCredentialsFilled}
+                onClick={() => void handleUseAgentCredentials()}
+                disabled={!agentCredentialsFilled || credentialsStatus.kind === 'loading'}
               >
-                Use agent credentials
+                {credentialsStatus.kind === 'loading' ? 'Validating…' : 'Use agent credentials'}
               </button>
             </div>
             <StatusBox status={credentialsStatus} />
@@ -468,11 +535,12 @@ function App() {
           <section className="panel">
             <h2 className="panel__heading">
               <span className="step-badge" aria-label="Step 3">3</span>
-              Create audit event
+              Create signed audit event
             </h2>
             <p>
-              Store a structured audit event and receive a signed ingestion receipt.{' '}
-              <code>agent_id</code> is taken from the Agent DID above.
+              Build an audit event, sign the unsigned canonical payload in the browser (demo mode),
+              then submit it with <code>verification_method</code>, <code>signature</code>, and{' '}
+              <code>agent_id</code> from the Agent DID above.
             </p>
             <div className="form-grid">
               <label>
@@ -558,7 +626,7 @@ function App() {
                     : undefined
                 }
               >
-                {eventStatus.kind === 'loading' ? 'Creating…' : 'Create audit event'}
+                {eventStatus.kind === 'loading' ? 'Signing…' : 'Create signed audit event'}
               </button>
             </div>
             <StatusBox status={eventStatus} />
@@ -624,8 +692,10 @@ function App() {
               Anchor batch
             </h2>
             <p>
-              Submit the current batch Merkle root to the on-chain anchor contract. Signing is
-              handled server-side — this UI never handles private keys or secrets.
+              Submit the current batch Merkle root to the on-chain anchor contract. Blockchain
+              anchor signing is handled server-side — this UI never handles wallet or anchor
+              private keys. It only accepts demo agent signing keys in step 2 for audit event
+              signatures.
             </p>
             <div className="panel__actions">
               <button

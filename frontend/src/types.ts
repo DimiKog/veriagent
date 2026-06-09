@@ -11,6 +11,11 @@ export interface AuditEvent {
   metadata?: Record<string, unknown> | null
 }
 
+export interface SignedAuditEvent extends AuditEvent {
+  verification_method: string
+  signature: string
+}
+
 export interface HealthResponse {
   status: string
   service: string
