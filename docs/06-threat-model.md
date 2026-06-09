@@ -69,9 +69,12 @@ Partially implemented (v0.9.2):
 - Real Ed25519 `did:key` multibase encoding (`did:key:z...`); legacy `did:key:demo:...` is deprecated.
 - `public_key` and `verification_method` validated against `agent_did` at registration.
 
+Partially implemented (v0.9.3):
+- Dashboard browser-side Ed25519 signing for **demo** audit events only; demo private key kept in React state (not persisted). Production agents should sign outside the browser.
+
 Not yet implemented:
 - DID resolution over the network (`did:key` does not support key rotation by itself; revocation/status is via VeriAgent's internal registry).
-- Frontend or agent SDK signing integration.
+- Production agent SDK signing integration.
 - Auth on batch creation, anchoring, or other operator endpoints.
 
 ## Future Mitigations

@@ -64,6 +64,16 @@ Duplicate `event_id` values return `409 Conflict`.
 
 Signatures are verified **before** storage so invalid or tampered events are never committed.
 
+### Client signing (dashboard demo, v0.9.3)
+
+The public dashboard can sign and submit events from the browser for demo workflows:
+
+1. Paste registered **Agent DID**, **Agent API Key**, and **Agent Private Key** (base64 Ed25519 seed).
+2. Click **Use agent credentials** — the UI derives the public key, verifies the DID, and computes `verification_method`.
+3. Build the unsigned event, canonicalize with RFC 8785 / JCS (excluding `signature` and `verification_method`), sign with Ed25519, and `POST /audit/events`.
+
+The demo private key is kept in React state only and is **not** written to `localStorage` or `sessionStorage`. Production agents should sign via `scripts/sign_demo_event.py`, direct API integration, or an agent SDK. Frontend JCS helpers mirror the backend; Python `jcs` remains the verification source of truth.
+
 ## GET /audit/events/{event_id}
 
 Retrieves stored metadata for an audit event.

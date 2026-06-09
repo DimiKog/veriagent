@@ -453,8 +453,46 @@ Current limitation:
 - `did:key:demo:...` is deprecated and rejected at registration.
 - `did:key` does not support key rotation by itself; agent revocation/status is internal to VeriAgent.
 - No DID resolution over the network.
-- Frontend and agent SDK signing unchanged.
+- Dashboard browser signing not yet available (shipped in v0.9.3); production agent SDK still pending.
 
 Next operational priorities:
 - **Frontend / agent SDK signing** for dashboard and production agent ingestion.
+- **Backup strategy** for production SQLite (`VERIAGENT_DB_PATH`) and recovery procedure on the VM.
+
+## 2026-06-09 (v0.9.3 — Frontend browser signing)
+
+Decisions:
+- Add browser-side Ed25519 signing to the dashboard for **demo purposes only**; production agents should sign outside the browser or via an SDK.
+- Use `@noble/ed25519` and `bs58` in the frontend — no Node-only `crypto` APIs.
+- Mirror backend `did:key` behavior: multicodec prefix `0xed 0x01`, base58btc multibase (`z`), `verification_method` = `{did}#{multibase_value}`.
+- Canonicalize unsigned events with RFC 8785 / JCS (`canonicalize` npm package); backend Python `jcs` remains the source of truth.
+- Sign only the unsigned canonical payload (`signature` and `verification_method` excluded).
+- Store the demo private key in React state only — never `localStorage` or `sessionStorage`.
+- Do not expose admin registration or `VERIAGENT_ADMIN_API_KEY` in the frontend.
+- Bump backend `/health` and OpenAPI version to `0.9.3` to align with the dashboard release.
+
+Implemented:
+- **Frontend utilities** — `src/utils/didKey.ts`, `canonicalize.ts`, `signEvent.ts`, `credentials.ts`, `nobleEd25519.ts`.
+- **Agent credentials (step 2)** — Agent DID, Agent API Key, and Agent Private Key (base64, `type="password"`); **Use agent credentials** derives the public key, verifies DID match, and computes `verification_method` before marking **Ready**.
+- **Signed audit event (step 3)** — build unsigned payload → JCS canonicalize → Ed25519 sign → submit `POST /audit/events` with `X-VeriAgent-API-Key`, `verification_method`, and base64 `signature`.
+- **Error handling** — clear messages for invalid private key, DID mismatch, and backend `403 Invalid event signature`.
+- **UI copy** — step 3 renamed to **Create signed audit event**; step 6 clarifies blockchain keys stay server-side.
+- **Dependencies** — `@noble/ed25519`, `@noble/hashes`, `bs58`, `canonicalize`.
+- **Backend** — `API_VERSION = "0.9.3"` in `backend/app/main.py` for `/health` and FastAPI metadata.
+- **Docs** — `frontend/README.md` updated with signed-event demo flow.
+
+Tested:
+- `npm run build` and `npm run lint` pass.
+- Frontend JCS output cross-checked against backend canonical form for a sample event (byte-identical).
+- Credential validation rejects invalid base64, wrong key length, and DID/private-key mismatch.
+
+Current limitation:
+- Browser signing is demo-mode only; users must not paste production private keys into the dashboard.
+- Batch creation and anchoring endpoints remain unauthenticated.
+
+Deployed:
+- Production VM updated; `https://veriagent.dimikog.org/health` returns `version: "0.9.3"`.
+
+Next operational priorities:
+- **Agent SDK** for production agent signing outside the browser.
 - **Backup strategy** for production SQLite (`VERIAGENT_DB_PATH`) and recovery procedure on the VM.

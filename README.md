@@ -4,7 +4,7 @@
 
 VeriAgent records structured audit events from AI agents, commits them with canonical hashing, batches them into Merkle trees, and anchors batch roots on Besu. A public dashboard walks through the full workflow end to end.
 
-## Public demo (v0.7)
+## Public demo (v0.9.3)
 
 | Resource | URL |
 | --- | --- |
@@ -27,6 +27,7 @@ VeriAgent provides a prototype audit pipeline for AI-agent activity:
 - Returns signed HMAC-SHA256 ingestion receipts
 - Requires Ed25519-signed audit events from registered agents (v0.9B)
 - Registers agents by real Ed25519 `did:key` identifiers with admin-protected onboarding (v0.9.2)
+- Signs audit events in the browser for demo use via the dashboard (v0.9.3)
 - Batches event hashes into Merkle trees
 - Generates and verifies Merkle inclusion proofs
 - Anchors Merkle roots on Besu via `VeriAgentAnchor`
@@ -125,7 +126,7 @@ Operational details: [docs/05-deployment.md](docs/05-deployment.md). Development
 
 - **Never commit** `.env`, private keys, API tokens, or deployer credentials.
 - **Never commit** `backend/data/veriagent.db`, virtualenvs, or Foundry broadcast artifacts with sensitive material.
-- The **frontend never handles private keys**. On-chain anchoring is performed server-side by the backend.
+- The **frontend never handles admin keys, wallet private keys, or anchor signing secrets**. On-chain anchoring is performed server-side by the backend. The dashboard accepts a **demo agent private key** in memory only (not persisted) to sign audit events in the browser — do not paste production signing keys into the UI.
 
 ## Documentation
 
