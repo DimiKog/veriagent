@@ -28,6 +28,21 @@ def sample_agent_register_payload(
     }
 
 
+def admin_request_headers(admin_key: str = TEST_ADMIN_API_KEY) -> dict[str, str]:
+    return {"X-VeriAgent-Admin-Key": admin_key}
+
+
+def post_audit_batch(client, admin_key: str = TEST_ADMIN_API_KEY):
+    return client.post("/audit/batches", headers=admin_request_headers(admin_key))
+
+
+def post_batch_anchor(client, batch_id: str, admin_key: str = TEST_ADMIN_API_KEY):
+    return client.post(
+        f"/audit/batches/{batch_id}/anchor",
+        headers=admin_request_headers(admin_key),
+    )
+
+
 def register_test_agent(
     client,
     agent_did: str = SAMPLE_AGENT_DID,

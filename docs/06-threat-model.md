@@ -19,6 +19,8 @@
 - Unauthorized audit event ingestion from unregistered or inactive agents (v0.8.1: `POST /audit/events` requires a valid agent API key and matching `agent_id`).
 - Forged or tampered audit events from agents without the registered private key (v0.9B: Ed25519 signature verified before storage).
 
+- Unauthorized Merkle batch creation or on-chain anchoring without the admin API key (v0.9.6: `POST /audit/batches` and `POST /audit/batches/{batch_id}/anchor` require `X-VeriAgent-Admin-Key`).
+
 ## VeriAgent MVP Does Not Yet Protect Against
 
 - An AI agent failing to submit an event.
@@ -78,7 +80,16 @@ Partially implemented (v0.9.4):
 Not yet implemented:
 - DID resolution over the network (`did:key` does not support key rotation by itself; revocation/status is via VeriAgent's internal registry).
 - SDK admin registration, async client, TypeScript SDK.
-- Auth on batch creation, anchoring, or other operator endpoints.
+
+## v0.9.6 (partial)
+
+Implemented:
+- Admin API key authentication on `POST /audit/batches` and `POST /audit/batches/{batch_id}/anchor` via `X-VeriAgent-Admin-Key`.
+- Constant-time admin key comparison via existing `require_admin_api_key` helper.
+- Public read endpoints unchanged: `GET /audit/batches/{batch_id}`, proof, and anchor record routes remain open.
+
+Not yet implemented:
+- Frontend or SDK updates to supply the admin key for batch/anchor operations (operator curl or server-side automation only for now).
 
 ## Future Mitigations
 

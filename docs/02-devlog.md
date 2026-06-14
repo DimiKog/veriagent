@@ -540,3 +540,26 @@ Tested:
 Next operational priorities:
 - Schedule cron on the production VM and rehearse restore on a staging copy.
 - Optional SDK extensions: agent registration helper, async client, TypeScript SDK.
+
+## 2026-06-14 (v0.9.6 — Admin-protected batch and anchor)
+
+Decisions:
+- Restrict **operator mutations** on Merkle batching and on-chain anchoring to holders of `VERIAGENT_ADMIN_API_KEY` (`X-VeriAgent-Admin-Key`), matching agent registration auth.
+- Leave **read-only** batch endpoints public: `GET /audit/batches/{batch_id}`, proof, and anchor record routes unchanged.
+- Bump backend `API_VERSION` to `0.9.6`; no frontend or Python SDK changes in this release.
+
+Implemented:
+- **`require_admin_api_key`** dependency on `POST /audit/batches` and `POST /audit/batches/{batch_id}/anchor` in `backend/app/main.py`.
+- **`tests/test_batch_admin_auth.py`** — missing/invalid/valid admin key cases for batch create and anchor.
+- **`tests/support.py`** — `post_audit_batch()` and `post_batch_anchor()` helpers for existing batch tests.
+- **Docs** — API auth requirements, threat model, testing guide, README security note.
+
+Tested:
+- `cd backend && python -m pytest` — full suite including six new admin auth tests.
+
+Current limitation:
+- Public dashboard still calls batch create/anchor without admin key; operator must use curl or automation with `X-VeriAgent-Admin-Key` until a frontend update.
+
+Next operational priorities:
+- Update dashboard batch/anchor steps to accept admin key (or move those steps to operator-only tooling).
+- Deploy v0.9.6 to production VM and verify `/health` reports `0.9.6`.

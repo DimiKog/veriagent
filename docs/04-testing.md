@@ -93,12 +93,25 @@ Merkle unit tests cover:
 
 Batch API tests cover:
 
-- Rejecting batch creation when no events exist
-- Creating and retrieving batches
+- Rejecting batch creation when no events exist (with valid admin key)
+- Creating and retrieving batches (admin key on `POST`, public `GET`)
 - Batching only newly stored events on subsequent runs
 - `POST /audit/merkle/verify` with valid and tampered proofs
 - `GET /audit/batches/{batch_id}/proof/{event_id}` for included, missing, and not-in-batch cases
 - Proof responses verifying successfully via `POST /audit/merkle/verify`
+
+## Batch and anchor admin auth tests
+
+`tests/test_batch_admin_auth.py` covers:
+
+- `POST /audit/batches` without admin key returns `401`
+- Invalid admin key on batch creation returns `401`
+- Valid admin key creates a batch successfully
+- `POST /audit/batches/{batch_id}/anchor` without admin key returns `401`
+- Invalid admin key on anchoring returns `401`
+- Valid admin key anchors successfully (with mocked on-chain calls)
+
+Shared helpers in `tests/support.py` attach `X-VeriAgent-Admin-Key` via `post_audit_batch()` and `post_batch_anchor()`.
 
 ## Anchoring tests
 
@@ -145,8 +158,9 @@ Audit ingestion auth tests cover:
 - `event.agent_id` mismatch with authenticated agent returns `403`
 - Inactive agent key returns `403`
 - Public endpoints still work without agent key: `GET /health`, `POST /audit/hash`, `GET /audit/events/{event_id}`, `POST /audit/verify`, batch GET/proof, and `POST /audit/merkle/verify`
+- Batch creation and anchoring require admin key: see `tests/test_batch_admin_auth.py`
 
-Shared helpers in `tests/support.py` register a test agent, sign the unsigned canonical event payload, and attach `X-VeriAgent-API-Key` to event submission in API and batch tests.
+Shared helpers in `tests/support.py` register a test agent, sign the unsigned canonical event payload, attach `X-VeriAgent-API-Key` to event submission, and attach `X-VeriAgent-Admin-Key` for batch create/anchor via `post_audit_batch()` and `post_batch_anchor()`.
 
 ## Signed audit event tests
 
@@ -235,9 +249,9 @@ Full trust-chain validation requires **signed** event ingestion. Options: the [P
 1. Register an agent via `POST /agents/register` with `X-VeriAgent-Admin-Key`; save `api_key`, `agent_did`, `verification_method`, and `public_key`.
 2. Submit a signed event with the [Python SDK](../sdk/python/README.md) or build a signed body with `python scripts/sign_demo_event.py` (set `VERIAGENT_DEMO_PRIVATE_KEY` to reuse the same agent identity across runs).
 3. `POST /audit/events` with `X-VeriAgent-API-Key` and the signed payload; confirm `receipt.signature` verifies.
-4. `POST /audit/batches` — note `batch_id` and `merkle_root`.
+4. `POST /audit/batches` — note `batch_id` and `merkle_root` (requires `X-VeriAgent-Admin-Key`).
 5. `GET /audit/batches/{batch_id}/proof/{event_id}` — confirm proof verifies via `POST /audit/merkle/verify`.
-6. `POST /audit/batches/{batch_id}/anchor` — requires Besu anchoring env on the API host (`VERIAGENT_CHAIN_ID=424242` for Besu Edu-Net); confirm `tx_hash`.
+6. `POST /audit/batches/{batch_id}/anchor` — requires admin key and Besu anchoring env on the API host (`VERIAGENT_CHAIN_ID=424242` for Besu Edu-Net); confirm `tx_hash`.
 7. Open `https://blockexplorer.dimikog.org/tx/{tx_hash}` and confirm the anchor transaction on chain `424242`.
 
 ### Dashboard end-to-end check

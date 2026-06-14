@@ -2,13 +2,13 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.merkle import merkle_proof, verify_inclusion_proof
-from tests.support import post_audit_event, register_test_agent, sample_event_payload
+from tests.support import post_audit_batch, post_audit_event, register_test_agent, sample_event_payload
 
 client = TestClient(app)
 
 
 def test_create_batch_with_no_events_returns_400():
-    response = client.post("/audit/batches")
+    response = post_audit_batch(client)
 
     assert response.status_code == 400
 
@@ -23,7 +23,7 @@ def test_create_and_get_batch():
         )
         assert response.status_code == 200
 
-    create_response = client.post("/audit/batches")
+    create_response = post_audit_batch(client)
     assert create_response.status_code == 200
     batch = create_response.json()
     assert batch["event_count"] == 3
@@ -43,14 +43,14 @@ def test_second_batch_only_includes_new_events():
         payload=sample_event_payload(event_id="event-new-1"),
         api_key=api_key,
     )
-    first_batch = client.post("/audit/batches").json()
+    first_batch = post_audit_batch(client).json()
 
     post_audit_event(
         client,
         payload=sample_event_payload(event_id="event-new-2"),
         api_key=api_key,
     )
-    second_batch = client.post("/audit/batches").json()
+    second_batch = post_audit_batch(client).json()
 
     assert first_batch["event_count"] == 1
     assert second_batch["event_count"] == 1
@@ -66,7 +66,7 @@ def test_merkle_verify_endpoint_accepts_valid_proof():
     )
     event_hash = store_response.json()["event_hash"]
 
-    batch = client.post("/audit/batches").json()
+    batch = post_audit_batch(client).json()
     proof = merkle_proof(batch["event_hashes"], event_hash)
     proof_payload = [{"sibling": sibling, "side": side} for sibling, side in proof]
 
@@ -94,7 +94,7 @@ def test_merkle_verify_endpoint_rejects_tampered_proof():
         )
 
     event_hash = client.get("/audit/events/event-merkle-tamper-1").json()["event_hash"]
-    batch = client.post("/audit/batches").json()
+    batch = post_audit_batch(client).json()
     proof = merkle_proof(batch["event_hashes"], event_hash)
     proof_payload = [{"sibling": "f" * 64, "side": proof[0][1]}]
 
@@ -126,7 +126,7 @@ def _store_and_batch(event_ids: list[str], api_key: str) -> tuple[dict, str]:
         )
         assert response.status_code == 200
 
-    batch = client.post("/audit/batches").json()
+    batch = post_audit_batch(client).json()
     return batch, event_ids[0]
 
 
@@ -178,7 +178,7 @@ def test_proof_endpoint_returns_404_when_event_not_in_batch():
         payload=sample_event_payload(event_id="event-in-batch"),
         api_key=api_key,
     )
-    batch = client.post("/audit/batches").json()
+    batch = post_audit_batch(client).json()
 
     post_audit_event(
         client,

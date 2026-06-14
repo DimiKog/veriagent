@@ -164,6 +164,12 @@ export function formatStoreEventError(error: unknown): string {
   return 'An unexpected error occurred'
 }
 
+export function getBatch(batchId: string): Promise<BatchResponse> {
+  return request<BatchResponse>(
+    `/audit/batches/${encodeURIComponent(batchId)}`,
+  )
+}
+
 export function createBatch(): Promise<BatchResponse> {
   return request<BatchResponse>('/audit/batches', {
     method: 'POST',

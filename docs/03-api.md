@@ -140,7 +140,10 @@ Missing events return `404 Not Found`.
 
 ## POST /audit/batches
 
-Creates a Merkle batch from all stored audit events that are not yet assigned to a batch.
+Creates a Merkle batch from all stored audit events that are not yet assigned to a batch. **Admin-protected.**
+
+Requires header:
+- `X-VeriAgent-Admin-Key` — must match `VERIAGENT_ADMIN_API_KEY`
 
 The backend:
 1. collects unbatched events in stable storage order,
@@ -156,6 +159,8 @@ Returns:
 - `event_hashes` — sorted leaf hashes included in the batch
 
 Returns `400 Bad Request` when no unbatched events are available.
+
+Returns `401 Unauthorized` when the admin key is missing or invalid.
 
 ## GET /audit/batches/{batch_id}
 
@@ -184,7 +189,10 @@ Returns `404 Not Found` when the batch, event, or batch membership is missing.
 
 ## POST /audit/batches/{batch_id}/anchor
 
-Anchors a stored local batch on `VeriAgentAnchor` and records the transaction in SQLite.
+Anchors a stored local batch on `VeriAgentAnchor` and records the transaction in SQLite. **Admin-protected.**
+
+Requires header:
+- `X-VeriAgent-Admin-Key` — must match `VERIAGENT_ADMIN_API_KEY`
 
 The backend:
 1. loads the local batch by `batch_id` (`404` if missing),
@@ -208,6 +216,8 @@ Returns:
 - `already_anchored`
 
 Returns `503 Service Unavailable` when anchoring configuration is missing or invalid.
+
+Returns `401 Unauthorized` when the admin key is missing or invalid.
 
 Returns `502 Bad Gateway` when the anchor transaction is mined but reverts (`receipt.status == 0`). No SQLite anchor record is stored in that case.
 

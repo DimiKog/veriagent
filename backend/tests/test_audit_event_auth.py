@@ -7,6 +7,7 @@ from app.receipts import verify_receipt
 from tests.conftest import TEST_RECEIPT_SECRET
 from tests.support import (
     SAMPLE_AGENT_DID,
+    post_audit_batch,
     post_audit_event,
     register_test_agent,
     sample_event_payload,
@@ -88,7 +89,7 @@ def test_public_read_and_verify_endpoints_still_work_without_agent_key():
 
     health_response = client.get("/health")
     assert health_response.status_code == 200
-    assert health_response.json()["version"] == "0.9.3"
+    assert health_response.json()["version"] == "0.9.6"
 
     hash_response = client.post("/audit/hash", json=payload)
     assert hash_response.status_code == 200
@@ -101,7 +102,7 @@ def test_public_read_and_verify_endpoints_still_work_without_agent_key():
     assert verify_response.status_code == 200
     assert verify_response.json()["verified"] is True
 
-    batch_response = client.post("/audit/batches")
+    batch_response = post_audit_batch(client)
     assert batch_response.status_code == 200
     batch = batch_response.json()
 

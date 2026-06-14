@@ -5,7 +5,13 @@ from fastapi.testclient import TestClient
 from app.anchoring import AnchorTransactionFailedError, AnchoringConfig, OnchainBatch
 from app.main import app
 from app.storage import get_batch_anchor
-from tests.support import post_audit_event, register_test_agent, sample_event_payload
+from tests.support import (
+    post_audit_batch,
+    post_audit_event,
+    post_batch_anchor,
+    register_test_agent,
+    sample_event_payload,
+)
 
 client = TestClient(app)
 
@@ -24,7 +30,7 @@ def _create_batch(event_id: str = "event-anchor-1") -> dict:
         api_key=api_key,
     )
     assert response.status_code == 200
-    batch_response = client.post("/audit/batches")
+    batch_response = post_audit_batch(client)
     assert batch_response.status_code == 200
     return batch_response.json()
 
@@ -83,7 +89,7 @@ def test_get_anchor_returns_404_before_anchoring():
 def test_post_anchor_returns_404_for_missing_batch(monkeypatch):
     _install_anchor_mocks(monkeypatch, {"batch_id": "unused", "merkle_root": "a" * 64, "event_count": 1})
 
-    response = client.post("/audit/batches/missing-batch-id/anchor")
+    response = post_batch_anchor(client, "missing-batch-id")
 
     assert response.status_code == 404
 
@@ -92,7 +98,7 @@ def test_post_anchor_stores_record_when_anchoring_succeeds(monkeypatch):
     batch = _create_batch()
     anchor_calls = _install_anchor_mocks(monkeypatch, batch)
 
-    response = client.post(f"/audit/batches/{batch['batch_id']}/anchor")
+    response = post_batch_anchor(client, batch["batch_id"])
 
     assert response.status_code == 200
     body = response.json()
@@ -111,8 +117,8 @@ def test_post_anchor_is_idempotent(monkeypatch):
     batch = _create_batch()
     anchor_calls = _install_anchor_mocks(monkeypatch, batch)
 
-    first = client.post(f"/audit/batches/{batch['batch_id']}/anchor")
-    second = client.post(f"/audit/batches/{batch['batch_id']}/anchor")
+    first = post_batch_anchor(client, batch["batch_id"])
+    second = post_batch_anchor(client, batch["batch_id"])
 
     assert first.status_code == 200
     assert first.json()["already_anchored"] is False
@@ -142,7 +148,7 @@ def test_post_anchor_does_not_store_record_when_transaction_reverts(monkeypatch)
         fake_wait_for_transaction_receipt,
     )
 
-    response = client.post(f"/audit/batches/{batch['batch_id']}/anchor")
+    response = post_batch_anchor(client, batch["batch_id"])
 
     assert response.status_code == 502
     assert "reverted" in response.json()["detail"].lower()
@@ -154,7 +160,7 @@ def test_get_anchor_returns_stored_record_after_anchoring(monkeypatch):
     batch = _create_batch()
     _install_anchor_mocks(monkeypatch, batch)
 
-    post_response = client.post(f"/audit/batches/{batch['batch_id']}/anchor")
+    post_response = post_batch_anchor(client, batch["batch_id"])
     assert post_response.status_code == 200
 
     get_response = client.get(f"/audit/batches/{batch['batch_id']}/anchor")

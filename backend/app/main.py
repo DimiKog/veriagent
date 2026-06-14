@@ -62,7 +62,7 @@ async def lifespan(_: FastAPI):
     yield
 
 
-API_VERSION = "0.9.3"
+API_VERSION = "0.9.6"
 
 app = FastAPI(title="VeriAgent API", version=API_VERSION, lifespan=lifespan)
 
@@ -225,7 +225,7 @@ def verify_event(event: AuditEvent):
 
 
 @app.post("/audit/batches", response_model=BatchResponse)
-def create_batch():
+def create_batch(_: None = Depends(require_admin_api_key)):
     try:
         batch = create_batch_from_unbatched()
     except NoUnbatchedEventsError as exc:
@@ -277,7 +277,7 @@ def get_batch_inclusion_proof(batch_id: str, event_id: str):
 
 
 @app.post("/audit/batches/{batch_id}/anchor", response_model=AnchorBatchResponse)
-def anchor_batch_on_chain(batch_id: str):
+def anchor_batch_on_chain(batch_id: str, _: None = Depends(require_admin_api_key)):
     try:
         result = perform_batch_anchor(batch_id)
     except BatchNotFoundError as exc:

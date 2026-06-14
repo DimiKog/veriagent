@@ -1,20 +1,18 @@
 import { useCallback, useState } from 'react'
 import {
-  anchorBatch,
   API_DOCS_URL,
   ApiError,
   BLOCKSCOUT_CONFIGURED,
   BLOCKSCOUT_TX_BASE,
-  createBatch,
+  formatStoreEventError,
+  getBatch,
   getBatchAnchor,
   getBatchProof,
-  formatStoreEventError,
   getHealth,
   storeAuditEvent,
   verifyMerkleProof,
 } from './api/client'
 import type {
-  AnchorBatchResponse,
   AuditEvent,
   BatchProofResponse,
   BatchResponse,
@@ -185,11 +183,12 @@ function App() {
   const [healthStatus, setHealthStatus] = useState<SectionStatus>({ kind: 'idle' })
   const [credentialsStatus, setCredentialsStatus] = useState<SectionStatus>({ kind: 'idle' })
   const [eventStatus, setEventStatus] = useState<SectionStatus>({ kind: 'idle' })
-  const [batchStatus, setBatchStatus] = useState<SectionStatus>({ kind: 'idle' })
-  const [proofStatus, setProofStatus] = useState<SectionStatus>({ kind: 'idle' })
-  const [anchorStatus, setAnchorStatus] = useState<SectionStatus>({ kind: 'idle' })
-  const [anchorResultStatus, setAnchorResultStatus] = useState<SectionStatus>({ kind: 'idle' })
+  const [evidenceBatchStatus, setEvidenceBatchStatus] = useState<SectionStatus>({ kind: 'idle' })
+  const [evidenceProofStatus, setEvidenceProofStatus] = useState<SectionStatus>({ kind: 'idle' })
+  const [evidenceAnchorStatus, setEvidenceAnchorStatus] = useState<SectionStatus>({ kind: 'idle' })
 
+  const [evidenceBatchId, setEvidenceBatchId] = useState('')
+  const [evidenceEventId, setEvidenceEventId] = useState('')
   const [lastProof, setLastProof] = useState<MerkleProofStep[]>([])
 
   const updateWorkflow = useCallback((patch: Partial<WorkflowState>) => {
@@ -296,9 +295,11 @@ function App() {
         agentApiKey.trim(),
       )
       updateWorkflow({ event_id: data.event_id, event_hash: data.event_hash })
+      setEvidenceEventId(data.event_id)
       setEventStatus({
         kind: 'success',
-        message: 'Signed audit event stored successfully.',
+        message:
+          'Event submitted. Batch creation and anchoring are operator-controlled in v0.9.6.',
         data,
       })
       const nextEvent = defaultEventPayload()
@@ -313,35 +314,51 @@ function App() {
     }
   }
 
-  const handleCreateBatch = async () => {
-    setBatchStatus({ kind: 'loading', message: 'Creating Merkle batch…' })
-    try {
-      const data: BatchResponse = await createBatch()
-      updateWorkflow({ batch_id: data.batch_id, merkle_root: data.merkle_root })
-      setBatchStatus({
-        kind: 'success',
-        message: `Batch created with ${data.event_count} event(s).`,
-        data,
-      })
-    } catch (error) {
-      setBatchStatus({ kind: 'error', message: errorMessage(error) })
-    }
-  }
-
-  const handleRetrieveProof = async () => {
-    if (!workflow.batch_id || !workflow.event_id) {
-      setProofStatus({
+  const handleLookupBatch = async () => {
+    const batchId = evidenceBatchId.trim()
+    if (!batchId) {
+      setEvidenceBatchStatus({
         kind: 'error',
-        message: 'Create an event and batch first so batch_id and event_id are set.',
+        message: 'Enter a batch_id to look up batch metadata.',
       })
       return
     }
 
-    setProofStatus({ kind: 'loading', message: 'Fetching Merkle proof…' })
+    setEvidenceBatchStatus({ kind: 'loading', message: 'Fetching batch metadata…' })
     try {
-      const data: BatchProofResponse = await getBatchProof(workflow.batch_id, workflow.event_id)
+      const data: BatchResponse = await getBatch(batchId)
+      updateWorkflow({ batch_id: data.batch_id, merkle_root: data.merkle_root })
+      setEvidenceBatchStatus({
+        kind: 'success',
+        message: `Batch found with ${data.event_count} event(s).`,
+        data,
+      })
+    } catch (error) {
+      setEvidenceBatchStatus({ kind: 'error', message: errorMessage(error) })
+    }
+  }
+
+  const handleRetrieveProof = async () => {
+    const batchId = evidenceBatchId.trim()
+    const eventId = evidenceEventId.trim()
+    if (!batchId || !eventId) {
+      setEvidenceProofStatus({
+        kind: 'error',
+        message: 'Enter both batch_id and event_id to retrieve a Merkle proof.',
+      })
+      return
+    }
+
+    setEvidenceProofStatus({ kind: 'loading', message: 'Fetching Merkle proof…' })
+    try {
+      const data: BatchProofResponse = await getBatchProof(batchId, eventId)
       setLastProof(data.proof)
-      updateWorkflow({ event_hash: data.event_hash, merkle_root: data.merkle_root })
+      updateWorkflow({
+        batch_id: data.batch_id,
+        event_id: data.event_id,
+        event_hash: data.event_hash,
+        merkle_root: data.merkle_root,
+      })
 
       const verifyResult = await verifyMerkleProof({
         event_hash: data.event_hash,
@@ -349,7 +366,7 @@ function App() {
         proof: data.proof,
       })
 
-      setProofStatus({
+      setEvidenceProofStatus({
         kind: 'success',
         message: verifyResult.verified
           ? 'Merkle proof retrieved and verified successfully.'
@@ -357,49 +374,35 @@ function App() {
         data: { proof: data, verify: verifyResult },
       })
     } catch (error) {
-      setProofStatus({ kind: 'error', message: errorMessage(error) })
-    }
-  }
-
-  const handleAnchorBatch = async () => {
-    if (!workflow.batch_id) {
-      setAnchorStatus({ kind: 'error', message: 'Create a Merkle batch first.' })
-      return
-    }
-
-    setAnchorStatus({ kind: 'loading', message: 'Submitting anchor transaction…' })
-    try {
-      const data: AnchorBatchResponse = await anchorBatch(workflow.batch_id)
-      updateWorkflow({ tx_hash: data.tx_hash, chain_id: String(data.chain_id) })
-      setAnchorStatus({
-        kind: 'success',
-        message: data.already_anchored
-          ? 'Batch was already anchored on chain.'
-          : 'Batch anchored on chain successfully.',
-        data,
-      })
-    } catch (error) {
-      setAnchorStatus({ kind: 'error', message: errorMessage(error) })
+      setEvidenceProofStatus({ kind: 'error', message: errorMessage(error) })
     }
   }
 
   const handleShowAnchorResult = async () => {
-    if (!workflow.batch_id) {
-      setAnchorResultStatus({ kind: 'error', message: 'Create and anchor a batch first.' })
+    const batchId = evidenceBatchId.trim()
+    if (!batchId) {
+      setEvidenceAnchorStatus({
+        kind: 'error',
+        message: 'Enter a batch_id to load the anchor record.',
+      })
       return
     }
 
-    setAnchorResultStatus({ kind: 'loading', message: 'Fetching anchor record…' })
+    setEvidenceAnchorStatus({ kind: 'loading', message: 'Fetching anchor record…' })
     try {
-      const data = await getBatchAnchor(workflow.batch_id)
-      updateWorkflow({ tx_hash: data.tx_hash, chain_id: String(data.chain_id) })
-      setAnchorResultStatus({
+      const data = await getBatchAnchor(batchId)
+      updateWorkflow({
+        batch_id: data.batch_id,
+        tx_hash: data.tx_hash,
+        chain_id: String(data.chain_id),
+      })
+      setEvidenceAnchorStatus({
         kind: 'success',
         message: 'Anchor record retrieved from the backend.',
         data,
       })
     } catch (error) {
-      setAnchorResultStatus({ kind: 'error', message: errorMessage(error) })
+      setEvidenceAnchorStatus({ kind: 'error', message: errorMessage(error) })
     }
   }
 
@@ -414,7 +417,7 @@ function App() {
           </div>
           <h1>
             VeriAgent
-            <span className="dashboard__version">v0.9.3</span>
+            <span className="dashboard__version">v0.9.6</span>
           </h1>
           <nav className="dashboard__nav" aria-label="External links">
             <a href={API_DOCS_URL} target="_blank" rel="noopener noreferrer">
@@ -636,100 +639,75 @@ function App() {
           <section className="panel">
             <h2 className="panel__heading">
               <span className="step-badge" aria-label="Step 4">4</span>
-              Create Merkle batch
+              Verify/read existing batch/proof/anchor evidence
             </h2>
-            <p>
-              Batch all unbatched stored events into a Merkle tree and compute the root.
+            <p className="operator-note">
+              <strong>Operator workflow:</strong> Operators create batches and anchors using the
+              admin API or the upcoming automatic anchoring service. This public dashboard does
+              not accept or store admin keys.
             </p>
+            <p>
+              After an operator batches and anchors events, enter the identifiers below to inspect
+              public read-only evidence: batch metadata, Merkle inclusion proofs, and on-chain
+              anchor records.
+            </p>
+            <div className="form-grid">
+              <label>
+                Batch ID
+                <input
+                  value={evidenceBatchId}
+                  onChange={(e) => setEvidenceBatchId(e.target.value)}
+                  placeholder="Paste batch_id from operator workflow"
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+              </label>
+              <label>
+                Event ID
+                <input
+                  value={evidenceEventId}
+                  onChange={(e) => setEvidenceEventId(e.target.value)}
+                  placeholder="event_id for Merkle proof lookup"
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+              </label>
+            </div>
             <div className="panel__actions">
               <button
                 type="button"
                 className="btn btn--primary"
-                onClick={handleCreateBatch}
-                disabled={batchStatus.kind === 'loading' || !workflow.event_id}
-                title={!workflow.event_id ? 'Store an event first' : undefined}
+                onClick={() => void handleLookupBatch()}
+                disabled={evidenceBatchStatus.kind === 'loading'}
               >
-                {batchStatus.kind === 'loading' ? 'Creating…' : 'Create batch'}
+                {evidenceBatchStatus.kind === 'loading' ? 'Loading…' : 'Lookup batch'}
               </button>
-            </div>
-            <StatusBox status={batchStatus} />
-          </section>
-
-          {/* Step 5 */}
-          <section className="panel">
-            <h2 className="panel__heading">
-              <span className="step-badge" aria-label="Step 5">5</span>
-              Retrieve Merkle proof
-            </h2>
-            <p>
-              Fetch an inclusion proof for the current event in the current batch, then verify it
-              with <code>POST /audit/merkle/verify</code>.
-            </p>
-            <div className="panel__actions">
               <button
                 type="button"
                 className="btn btn--primary"
-                onClick={handleRetrieveProof}
-                disabled={proofStatus.kind === 'loading' || !workflow.batch_id}
-                title={!workflow.batch_id ? 'Create a batch first' : undefined}
+                onClick={() => void handleRetrieveProof()}
+                disabled={evidenceProofStatus.kind === 'loading'}
               >
-                {proofStatus.kind === 'loading' ? 'Retrieving…' : 'Get & verify proof'}
+                {evidenceProofStatus.kind === 'loading' ? 'Retrieving…' : 'Get & verify proof'}
+              </button>
+              <button
+                type="button"
+                className="btn btn--primary"
+                onClick={() => void handleShowAnchorResult()}
+                disabled={evidenceAnchorStatus.kind === 'loading'}
+              >
+                {evidenceAnchorStatus.kind === 'loading' ? 'Loading…' : 'Get anchor record'}
               </button>
             </div>
-            {lastProof.length > 0 && proofStatus.kind !== 'loading' && (
+            {lastProof.length > 0 && evidenceProofStatus.kind !== 'loading' && (
               <p style={{ marginTop: '0.65rem', marginBottom: 0 }}>
                 Cached proof steps:{' '}
                 <span className="badge badge--ok">{lastProof.length}</span>
               </p>
             )}
-            <StatusBox status={proofStatus} />
-          </section>
-
-          {/* Step 6 */}
-          <section className="panel">
-            <h2 className="panel__heading">
-              <span className="step-badge" aria-label="Step 6">6</span>
-              Anchor batch
-            </h2>
-            <p>
-              Submit the current batch Merkle root to the on-chain anchor contract. Blockchain
-              anchor signing is handled server-side — this UI never handles wallet or anchor
-              private keys. It only accepts demo agent signing keys in step 2 for audit event
-              signatures.
-            </p>
-            <div className="panel__actions">
-              <button
-                type="button"
-                className="btn btn--primary"
-                onClick={handleAnchorBatch}
-                disabled={anchorStatus.kind === 'loading' || !workflow.batch_id}
-                title={!workflow.batch_id ? 'Create a batch first' : undefined}
-              >
-                {anchorStatus.kind === 'loading' ? 'Anchoring…' : 'Anchor batch'}
-              </button>
-            </div>
-            <StatusBox status={anchorStatus} />
-          </section>
-
-          {/* Step 7 */}
-          <section className="panel">
-            <h2 className="panel__heading">
-              <span className="step-badge" aria-label="Step 7">7</span>
-              Show anchor result
-            </h2>
-            <p>Load the stored anchor record for the current batch from the backend.</p>
-            <div className="panel__actions">
-              <button
-                type="button"
-                className="btn btn--primary"
-                onClick={handleShowAnchorResult}
-                disabled={anchorResultStatus.kind === 'loading' || !workflow.batch_id}
-                title={!workflow.batch_id ? 'Create a batch first' : undefined}
-              >
-                {anchorResultStatus.kind === 'loading' ? 'Loading…' : 'Get anchor record'}
-              </button>
-            </div>
-            <StatusBox status={anchorResultStatus} />
+            <StatusBox status={evidenceBatchStatus} />
+            <StatusBox status={evidenceProofStatus} />
+            <StatusBox status={evidenceAnchorStatus} />
           </section>
 
           {/* Success banner */}

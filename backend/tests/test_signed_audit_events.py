@@ -18,6 +18,7 @@ from tests.support import (
     SAMPLE_VERIFICATION_METHOD,
     TEST_PRIVATE_KEY_B64,
     TEST_PUBLIC_KEY_B64,
+    post_audit_batch,
     post_audit_event,
     register_test_agent,
     sample_event_payload,
@@ -181,7 +182,7 @@ def test_batching_still_works():
     store_response = post_audit_event(client, payload=payload, api_key=api_key)
     assert store_response.status_code == 200
 
-    batch_response = client.post("/audit/batches")
+    batch_response = post_audit_batch(client)
     assert batch_response.status_code == 200
     batch = batch_response.json()
     assert store_response.json()["event_hash"] in batch["event_hashes"]

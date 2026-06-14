@@ -42,10 +42,16 @@ def test_cors_rejects_unlisted_origin():
     assert "access-control-allow-origin" not in response.headers
 
 
+from tests.conftest import TEST_ADMIN_API_KEY
+
+
 def test_cors_post_allows_github_pages_origin():
     response = client.post(
         "/audit/batches",
-        headers={"Origin": "https://dimikog.github.io"},
+        headers={
+            "Origin": "https://dimikog.github.io",
+            "X-VeriAgent-Admin-Key": TEST_ADMIN_API_KEY,
+        },
     )
 
     assert response.status_code == 400
