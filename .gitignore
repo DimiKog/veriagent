@@ -1,6 +1,7 @@
-backend/.venv/
-sdk/python/.venv/
-sdk/python/*.egg-info/
+.venv/
+venv/
+env/
+*.egg-info/
 sdk/python/.pytest_cache/
 backend/data/
 __pycache__/
