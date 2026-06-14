@@ -72,7 +72,45 @@ The public dashboard can sign and submit events from the browser for demo workfl
 2. Click **Use agent credentials** — the UI derives the public key, verifies the DID, and computes `verification_method`.
 3. Build the unsigned event, canonicalize with RFC 8785 / JCS (excluding `signature` and `verification_method`), sign with Ed25519, and `POST /audit/events`.
 
-The demo private key is kept in React state only and is **not** written to `localStorage` or `sessionStorage`. Production agents should sign via `scripts/sign_demo_event.py`, direct API integration, or an agent SDK. Frontend JCS helpers mirror the backend; Python `jcs` remains the verification source of truth.
+The demo private key is kept in React state only and is **not** written to `localStorage` or `sessionStorage`. Production agents should sign via the **Python SDK** (v0.9.4), `scripts/sign_demo_event.py`, or direct API integration. Frontend JCS helpers mirror the backend; Python `jcs` remains the verification source of truth.
+
+### Client signing (Python SDK, v0.9.4)
+
+External agents can use the minimal Python SDK at `sdk/python/` instead of implementing canonicalization and signing by hand.
+
+Install:
+
+```bash
+cd sdk/python
+python -m venv .venv && source .venv/bin/activate
+pip install -e .
+```
+
+Usage:
+
+```python
+from veriagent import VeriAgentClient
+
+client = VeriAgentClient(
+    api_base_url="https://veriagent.dimikog.org",
+    agent_api_key="va_agent_...",       # from POST /agents/register
+    private_key_base64="...",           # 32-byte Ed25519 seed, base64
+)
+
+response = client.submit_event(
+    event_id="event-sdk-001",
+    task_id="task-001",
+    model_name="demo-model",
+    tool_calls=["search"],
+    input_hash="sha256:input123",
+    output_hash="sha256:output456",
+    policy_version="policy-v0.1",
+)
+```
+
+The client derives `agent_did` and `verification_method` from the private key automatically. If `timestamp` is omitted, the SDK uses the current UTC ISO timestamp. The SDK does **not** include admin agent registration yet — register via `POST /agents/register` first.
+
+Full setup (demo key, manual registration curl, tests): [sdk/python/README.md](../sdk/python/README.md).
 
 ## GET /audit/events/{event_id}
 

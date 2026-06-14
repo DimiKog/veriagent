@@ -453,10 +453,9 @@ Current limitation:
 - `did:key:demo:...` is deprecated and rejected at registration.
 - `did:key` does not support key rotation by itself; agent revocation/status is internal to VeriAgent.
 - No DID resolution over the network.
-- Dashboard browser signing not yet available (shipped in v0.9.3); production agent SDK still pending.
+- Dashboard browser signing shipped in v0.9.3; Python agent SDK shipped in v0.9.4 (`sdk/python/`).
 
 Next operational priorities:
-- **Frontend / agent SDK signing** for dashboard and production agent ingestion.
 - **Backup strategy** for production SQLite (`VERIAGENT_DB_PATH`) and recovery procedure on the VM.
 
 ## 2026-06-09 (v0.9.3 — Frontend browser signing)
@@ -494,5 +493,50 @@ Deployed:
 - Production VM updated; `https://veriagent.dimikog.org/health` returns `version: "0.9.3"`.
 
 Next operational priorities:
-- **Agent SDK** for production agent signing outside the browser.
 - **Backup strategy** for production SQLite (`VERIAGENT_DB_PATH`) and recovery procedure on the VM.
+
+## 2026-06-09 (v0.9.4 — Python Agent SDK)
+
+Decisions:
+- Ship a **minimal Python SDK** for external agents to submit signed audit events without hand-rolling canonicalization, signing, or HTTP headers.
+- Keep the SDK small: identity derivation, JCS canonicalization, Ed25519 signing, and `POST /audit/events` only — **no admin registration wrapper** yet.
+- Reuse the same libraries and rules as the backend: Python `jcs`, Ed25519 `did:key` multicodec encoding, unsigned canonical signing boundary.
+- Package lives at `sdk/python/veriagent/` with its own `pyproject.toml` and tests; backend and frontend behavior unchanged.
+
+Implemented:
+- **`veriagent.identity`** — load Ed25519 private key from base64; derive public key, real `did:key:z...`, and `verification_method`.
+- **`veriagent.signing`** — build unsigned event dict, RFC 8785 / JCS canonicalize, sign canonical bytes.
+- **`veriagent.client.VeriAgentClient`** — `api_base_url`, `agent_api_key`, `private_key_base64`; auto-derived `agent_did` and `verification_method`; `submit_event(...)` POSTs with `X-VeriAgent-API-Key` and returns backend JSON.
+- **`sdk/python/README.md`** — demo key creation, manual agent registration, Python submit example.
+- **Tests** — DID derivation, signing, canonicalization stability (backend vector), signed payload construction, mocked HTTP header check (`sdk/python/tests/test_sdk.py`).
+
+Tested:
+- `cd sdk/python && pip install -e ".[dev]" && python -m pytest -v` — 10 tests pass.
+- SDK signatures cross-checked against `backend/tests/support.py` for the same unsigned event payload (byte-identical signatures).
+
+Current limitation:
+- Admin `POST /agents/register` is not wrapped by the SDK; agents must register manually (curl, dashboard operator flow, or direct API).
+- SDK version is `0.9.4`; backend `/health` remains `0.9.3` until a separate API release bump.
+
+Next operational priorities:
+- Optional SDK extensions: agent registration helper, async client, TypeScript SDK.
+
+## 2026-06-14 (SQLite backup and restore)
+
+Decisions:
+- Add **operator-safe VM tooling** before v1.0: hot backup with `sqlite3 ".backup"` (not raw `cp` while the service runs), gzip artifacts, 14-backup retention on disk.
+- Restore is **explicit and destructive**: require a backup file path, stop `veriagent`, copy current DB to an emergency file, then restore and restart.
+- Resolve `VERIAGENT_DB_PATH` from `backend/.env` when present; default production path `/opt/veriagent/backend/data/veriagent.db`.
+- No backend API or frontend changes for this milestone.
+
+Implemented:
+- **`scripts/backup_sqlite.sh`** — timestamped gzip backups under `/opt/veriagent/backups/sqlite/`.
+- **`scripts/restore_sqlite.sh`** — systemd stop/start, emergency copy, restore from `.db.gz`.
+- **`docs/07-backup-restore.md`** — manual backup, cron example, restore and rollback steps.
+
+Tested:
+- Script review against production VM paths and env resolution; operator verification steps documented for live VM use.
+
+Next operational priorities:
+- Schedule cron on the production VM and rehearse restore on a staging copy.
+- Optional SDK extensions: agent registration helper, async client, TypeScript SDK.

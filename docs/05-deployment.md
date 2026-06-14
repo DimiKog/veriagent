@@ -51,7 +51,7 @@ Summary of deployment-relevant work (detail in [docs/02-devlog.md](02-devlog.md)
 - **GitHub Pages pipeline** — `.github/workflows/deploy-frontend.yml` publishes `frontend/dist/` to **`gh-pages`**.
 - **Documentation** — Root README, this guide, [docs/04-testing.md](04-testing.md), [frontend/README.md](../frontend/README.md).
 
-The frontend **never** holds admin keys, wallet private keys, or anchor signing secrets. Anchoring is server-side only. The dashboard accepts a **demo agent private key** in memory only (not persisted) to sign audit events in the browser; production agents should sign via API, `scripts/sign_demo_event.py`, or an agent SDK.
+The frontend **never** holds admin keys, wallet private keys, or anchor signing secrets. Anchoring is server-side only. The dashboard accepts a **demo agent private key** in memory only (not persisted) to sign audit events in the browser; production agents should sign via the **Python SDK** (`sdk/python/`), `scripts/sign_demo_event.py`, or direct API integration.
 
 ---
 
@@ -354,10 +354,27 @@ When `contracts/src/VeriAgentAnchor.sol` changes:
 
 ---
 
+## Python Agent SDK (v0.9.4)
+
+External agents can submit signed events without implementing JCS or HTTP auth headers manually.
+
+| Item | Location |
+|------|----------|
+| Package | `sdk/python/veriagent/` |
+| Install | `cd sdk/python && pip install -e .` |
+| Docs | [sdk/python/README.md](../sdk/python/README.md) |
+| Tests | `cd sdk/python && pip install -e ".[dev]" && python -m pytest -v` |
+
+The SDK derives `agent_did` and `verification_method` from a base64 Ed25519 private key, canonicalizes the unsigned event with Python `jcs`, signs, and POSTs to `/audit/events` with `X-VeriAgent-API-Key`. Admin agent registration is **not** included yet — register agents via `POST /agents/register` on the API host first.
+
+Demo private key for local testing: `scripts/demo_agent.env` (`VERIAGENT_DEMO_PRIVATE_KEY`).
+
+---
+
 ## What is not in scope yet
 
 - Production VM automation / IaC for VeriAgent
-- Spec-compliant `did:key` derivation, DID resolution, and VC/ZKP
-- Production-grade agent SDK signing (dashboard browser signing is demo-mode only)
+- DID resolution over the network, key rotation via DID, and VC/ZKP
+- SDK admin registration wrapper, async client, TypeScript SDK
 - SQLite backup/recovery automation on the VM
 - OpenTelemetry and authenticated batch/anchor endpoints
