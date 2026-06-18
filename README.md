@@ -201,6 +201,8 @@ Operational details: [docs/05-deployment.md](docs/05-deployment.md). SQLite back
 | [docs/05-deployment.md](docs/05-deployment.md) | Besu, VM, auto-anchor, CORS, and GitHub Pages deployment |
 | [docs/06-threat-model.md](docs/06-threat-model.md) | Threat model and security boundaries |
 | [docs/07-backup-restore.md](docs/07-backup-restore.md) | SQLite backup and restore on the VM |
+| [docs/08-architecture.md](docs/08-architecture.md) | System architecture (v1.0-RC1) |
+| [docs/09-demo-mode.md](docs/09-demo-mode.md) | Demo mode design — safe public onboarding without admin keys (design only) |
 | [docs/02-devlog.md](docs/02-devlog.md) | Phase-by-phase development log |
 | [sdk/python/README.md](sdk/python/README.md) | Python SDK install and usage |
 | [frontend/README.md](frontend/README.md) | Frontend setup and Pages workflow |

@@ -98,6 +98,10 @@ curl -s https://veriagent.dimikog.org/ops/status | jq .
 
 Check `scheduler_running`, `last_status`, `last_batch_id`, and `last_anchor_tx` after enabling auto anchoring.
 
+### Demo mode (design only)
+
+A safer public onboarding flow (browser-generated keys, `POST /demo/agents`, short-lived demo agents) is documented in [09-demo-mode.md](09-demo-mode.md). **Not implemented yet.** The proposed master switch `VERIAGENT_DEMO_MODE_ENABLED` defaults to `false` and must remain off on production until backend and frontend phases ship. Until then, demo users register agents via admin `POST /agents/register` or operator-prepared credentials (see dashboard E2E steps below).
+
 Store secrets in a gitignored `.env` on the host or your secrets manager.
 
 ### Deploy or update the backend on the VM

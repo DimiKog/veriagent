@@ -204,7 +204,7 @@ Public `GET /ops/status` returns scheduler configuration and last cycle metadata
 
 - **SQLite is local** — Single-node storage; no built-in replication or multi-region HA.
 - **Registry is centralized** — Agent records live in operator-controlled SQLite, not on a public DID network.
-- **Admin registration is manual** — No self-service or VC-based onboarding flow.
+- **Admin registration is manual** — No self-service or VC-based onboarding flow. A proposed **demo mode** (`POST /demo/agents`, browser keygen, short-lived demo agents) is [design only](09-demo-mode.md); not implemented.
 - **No VC-based onboarding yet** — W3C Verifiable Credentials are not used for agent identity.
 - **No independent verifier CLI yet** — Verification requires API calls, custom scripts, or manual Blockscout/RPC checks.
 - **No off-chain object storage yet** — Events reference content via hashes only; raw inputs/outputs are not stored by VeriAgent.
@@ -220,6 +220,7 @@ Public `GET /ops/status` returns scheduler configuration and last cycle metadata
 - Deploy v1.0-RC1 to production; validate `/health`, `/ops/status`, and end-to-end auto-anchoring on Besu Edu-Net.
 - Rehearse SQLite backup/restore on a staging copy.
 - Optional dashboard update for admin key or auto-anchor status display.
+- **Demo mode (phase 2–4)** — Public `POST /demo/agents` and one-click dashboard onboarding; see [09-demo-mode.md](09-demo-mode.md).
 - Documented operator runbooks and monitoring alerts on `last_status` / `last_error`.
 
 **Beyond v1.0 (research directions):**
@@ -227,9 +228,10 @@ Public `GET /ops/status` returns scheduler configuration and last cycle metadata
 - Independent verifier CLI (local proof + anchor validation without trusting the API for reads).
 - TypeScript SDK and SDK admin registration helper.
 - VC-based or federated agent onboarding.
+- **Demo mode** — Ephemeral demo agents without admin keys in the browser; full design in [09-demo-mode.md](09-demo-mode.md).
 - Off-chain object storage with hash-linked references in events.
 - Shorter anchoring intervals, public-chain anchoring, or external witnesses.
 - Middleware-based capture outside the agent process.
 - Threat-model hardening for stolen keys (rotation, revocation workflows, HSM integration).
 
-For phase-by-phase implementation history, see [02-devlog.md](02-devlog.md). For API and deployment details, see [03-api.md](03-api.md) and [05-deployment.md](05-deployment.md).
+For phase-by-phase implementation history, see [02-devlog.md](02-devlog.md). For API and deployment details, see [03-api.md](03-api.md) and [05-deployment.md](05-deployment.md). For the demo-mode onboarding design, see [09-demo-mode.md](09-demo-mode.md).
