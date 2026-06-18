@@ -70,7 +70,7 @@ Minimal library at `sdk/python/`. Handles `did:key` derivation, RFC 8785 / JCS c
 
 ### Browser dashboard
 
-Static React app on GitHub Pages (`https://dimikog.github.io/veriagent/`). Demonstrates the full workflow including **in-browser Ed25519 signing** for demo events. The demo private key lives in memory only. Batch and anchor steps still call admin-protected API routes without an admin key in the UI (operator must use curl or enable auto-anchoring server-side).
+Static React app on GitHub Pages (`https://dimikog.github.io/veriagent/`). Demonstrates the full workflow including **in-browser Ed25519 signing** for demo events. The demo private key lives in memory only. The dashboard no longer exposes batch creation or anchoring operations. Public users can submit signed audit events and inspect existing batch, proof, and anchor evidence. Batch creation and anchoring are performed either by operators through admin-protected API routes or automatically by the backend scheduler when auto-anchoring is enabled.
 
 ### FastAPI backend
 
