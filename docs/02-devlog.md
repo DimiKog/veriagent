@@ -562,4 +562,35 @@ Current limitation:
 
 Next operational priorities:
 - Update dashboard batch/anchor steps to accept admin key (or move those steps to operator-only tooling).
-- Deploy v0.9.6 to production VM and verify `/health` reports `0.9.6`.
+
+## 2026-06-18 (v1.0-pre — Automatic batching and anchoring)
+
+Decisions:
+- Remove routine operator steps for Merkle batching and on-chain anchoring when auto mode is enabled.
+- Run a **background scheduler** inside the FastAPI lifespan; disabled by default (`VERIAGENT_AUTO_ANCHOR_ENABLED=false`).
+- Reuse existing `create_batch_from_unbatched()` and `perform_batch_anchor()` — no duplicated Merkle or web3 logic.
+- On anchor failure, keep the created batch in SQLite, log the error, and continue on the next interval.
+- Scheduler startup errors must not prevent API startup.
+- Bump backend `API_VERSION` to `1.0-pre`; no frontend or Python SDK changes in this release.
+
+Implemented:
+- **`backend/app/auto_anchor_scheduler.py`** — config loader, `run_auto_anchor_cycle()`, asyncio background loop started from `lifespan`.
+- **`backend/app/main.py`** — lifespan starts/stops scheduler; version `1.0-pre`.
+- **`tests/test_auto_anchor_scheduler.py`** — no events, below threshold, threshold reached, anchor failure handling.
+- **Docs** — API background behavior, testing guide, deployment env vars.
+
+Configuration (defaults):
+- `VERIAGENT_AUTO_ANCHOR_ENABLED=false`
+- `VERIAGENT_AUTO_ANCHOR_INTERVAL_SECONDS=300`
+- `VERIAGENT_AUTO_ANCHOR_MIN_EVENTS=1`
+
+Tested:
+- `cd backend && python -m pytest` — full suite including four new scheduler tests.
+
+Current limitation:
+- Public dashboard still exposes manual batch/anchor steps; auto mode is server-side only until a frontend update.
+
+Next operational priorities:
+- Deploy v1.0-pre to production VM and verify `/health` reports `1.0-pre`.
+- Enable auto anchoring on production VM after validating Besu anchoring env end to end.
+- Update dashboard to reflect automatic batch/anchor when enabled (optional UX).

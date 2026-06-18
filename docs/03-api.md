@@ -221,6 +221,31 @@ Returns `401 Unauthorized` when the admin key is missing or invalid.
 
 Returns `502 Bad Gateway` when the anchor transaction is mined but reverts (`receipt.status == 0`). No SQLite anchor record is stored in that case.
 
+## Automatic batching and anchoring (v1.0-pre)
+
+When enabled, the API runs a **background scheduler** on startup (no HTTP endpoint). Each interval it counts unbatched events; if the count is at least `VERIAGENT_AUTO_ANCHOR_MIN_EVENTS`, it creates a Merkle batch and anchors it using the same logic as the admin `POST` routes above.
+
+Configuration (environment variables):
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `VERIAGENT_AUTO_ANCHOR_ENABLED` | `false` | Set to `true` to enable the scheduler |
+| `VERIAGENT_AUTO_ANCHOR_INTERVAL_SECONDS` | `300` | Seconds between scheduler runs |
+| `VERIAGENT_AUTO_ANCHOR_MIN_EVENTS` | `1` | Minimum unbatched events before batching |
+
+Behavior:
+1. On API startup, if enabled, the scheduler logs **scheduler started** and runs on the configured interval.
+2. Each run counts unbatched events via `list_unbatched_events()`.
+3. If there are no unbatched events, logs **no events** and skips.
+4. If the count is below `VERIAGENT_AUTO_ANCHOR_MIN_EVENTS`, skips without batching.
+5. Otherwise calls `create_batch_from_unbatched()` (logs **batch created**) then `perform_batch_anchor()` (logs **anchor succeeded** or **anchor failed**).
+6. If anchoring fails, the batch remains in SQLite; the next interval continues normally.
+7. Scheduler startup failures are logged but do not block API startup.
+
+Manual admin routes (`POST /audit/batches`, `POST /audit/batches/{batch_id}/anchor`) remain available when auto mode is enabled.
+
+Requires the same Besu anchoring environment variables as manual anchoring (see [05-deployment.md](05-deployment.md)).
+
 ## GET /audit/batches/{batch_id}/anchor
 
 Returns the SQLite anchor record for a batch.

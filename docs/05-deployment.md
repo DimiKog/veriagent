@@ -82,6 +82,14 @@ Optional example Nginx site config: [`deploy/nginx-veriagent-api.conf.example`](
 |----------|---------|
 | `VERIAGENT_DB_PATH` | Optional SQLite file path |
 
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `VERIAGENT_AUTO_ANCHOR_ENABLED` | `false` | Enable background batch + anchor scheduler |
+| `VERIAGENT_AUTO_ANCHOR_INTERVAL_SECONDS` | `300` | Seconds between scheduler runs |
+| `VERIAGENT_AUTO_ANCHOR_MIN_EVENTS` | `1` | Minimum unbatched events before creating a batch |
+
+When `VERIAGENT_AUTO_ANCHOR_ENABLED=true`, the API batches and anchors unbatched events on the configured interval without manual `POST /audit/batches` or `POST .../anchor` calls. Requires the same Besu anchoring env vars as manual anchoring. See [03-api.md](03-api.md#automatic-batching-and-anchoring-v10-pre).
+
 Store secrets in a gitignored `.env` on the host or your secrets manager.
 
 ### Deploy or update the backend on the VM

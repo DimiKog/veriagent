@@ -54,6 +54,7 @@ python -m pytest -v
 | `tests/test_api.py` | FastAPI endpoints including receipt responses |
 | `tests/test_anchoring.py` | On-chain anchor helpers (batch id, metadata hash, ABI loading, config) |
 | `tests/test_batch_anchor_api.py` | Batch anchor API with monkeypatched web3 calls (no Anvil required) |
+| `tests/test_auto_anchor_scheduler.py` | Automatic batch/anchor scheduler cycle (no events, threshold, anchor failure) |
 | `tests/test_agents_api.py` | Agent registry registration, Ed25519 `did:key` binding validation, and lookup with admin key auth |
 | `tests/test_audit_event_auth.py` | Agent API key auth for `POST /audit/events` and public endpoint regression |
 | `tests/test_signatures.py` | Ed25519 key generation, signing, verification, real `did:key` encoding/decoding, and deprecated demo DID helpers |
@@ -135,6 +136,17 @@ Coverage includes:
 - Successful anchor stores a `batch_anchors` row when mocks succeed
 - Second `POST` is idempotent (`already_anchored: true`, no second `anchor_batch` call)
 - `GET` returns the stored record after anchoring
+
+## Automatic batch and anchor scheduler tests (v1.0-pre)
+
+`tests/test_auto_anchor_scheduler.py` exercises `run_auto_anchor_cycle()` directly (no waiting for the asyncio interval loop). Coverage includes:
+
+- **No events** — logs `auto anchor: no events`; no batch created
+- **Below threshold** — one unbatched event with `min_events=2`; no batch created
+- **Threshold reached** — batch created and anchored with mocked web3 calls; logs batch created and anchor succeeded
+- **Anchor failure** — batch remains in SQLite without anchor record; next cycle logs no events
+
+Mocks patch `app.batch_anchoring.anchoring` and `app.batch_anchoring.load_anchoring_config`, same pattern as batch anchor API tests.
 
 ## Agent registry tests
 

@@ -38,6 +38,7 @@ from app.signatures import (
     validate_ed25519_did_key_agent,
     verify_signature,
 )
+from app.auto_anchor_scheduler import start_auto_anchor_scheduler, stop_auto_anchor_scheduler
 from app.storage import (
     AgentAlreadyExistsError,
     EventAlreadyExistsError,
@@ -59,10 +60,14 @@ from app.storage import (
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     init_db()
-    yield
+    scheduler_task, scheduler_stop = start_auto_anchor_scheduler()
+    try:
+        yield
+    finally:
+        await stop_auto_anchor_scheduler(scheduler_task, scheduler_stop)
 
 
-API_VERSION = "0.9.6"
+API_VERSION = "1.0-pre"
 
 app = FastAPI(title="VeriAgent API", version=API_VERSION, lifespan=lifespan)
 
