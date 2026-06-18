@@ -137,3 +137,27 @@ class AgentResponse(BaseModel):
     public_key: str
     status: str
     created_at: str
+
+
+AutoAnchorLastStatus = Literal[
+    "idle",
+    "no_events",
+    "below_threshold",
+    "batch_created",
+    "anchor_succeeded",
+    "anchor_failed",
+]
+
+
+class OpsStatusResponse(BaseModel):
+    service: str
+    version: str
+    auto_anchor_enabled: bool
+    interval_seconds: int
+    min_events: int
+    scheduler_running: bool
+    last_run_at: str | None = None
+    last_status: AutoAnchorLastStatus
+    last_batch_id: str | None = None
+    last_anchor_tx: str | None = None
+    last_error: str | None = None

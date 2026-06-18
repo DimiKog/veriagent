@@ -27,6 +27,7 @@ from app.models import (
     MerkleVerifyResponse,
     RegisterAgentRequest,
     RegisterAgentResponse,
+    OpsStatusResponse,
     SignedAuditEventRequest,
     StoreEventResponse,
     StoredEventResponse,
@@ -38,7 +39,7 @@ from app.signatures import (
     validate_ed25519_did_key_agent,
     verify_signature,
 )
-from app.auto_anchor_scheduler import start_auto_anchor_scheduler, stop_auto_anchor_scheduler
+from app.auto_anchor_scheduler import get_auto_anchor_ops_status, start_auto_anchor_scheduler, stop_auto_anchor_scheduler
 from app.storage import (
     AgentAlreadyExistsError,
     EventAlreadyExistsError,
@@ -92,6 +93,11 @@ def health():
         "service": "veriagent",
         "version": API_VERSION,
     }
+
+
+@app.get("/ops/status", response_model=OpsStatusResponse)
+def ops_status():
+    return get_auto_anchor_ops_status(service="veriagent", version=API_VERSION)
 
 
 def _agent_response(agent: StoredAgent) -> AgentResponse:

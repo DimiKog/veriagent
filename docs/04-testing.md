@@ -55,6 +55,7 @@ python -m pytest -v
 | `tests/test_anchoring.py` | On-chain anchor helpers (batch id, metadata hash, ABI loading, config) |
 | `tests/test_batch_anchor_api.py` | Batch anchor API with monkeypatched web3 calls (no Anvil required) |
 | `tests/test_auto_anchor_scheduler.py` | Automatic batch/anchor scheduler cycle (no events, threshold, anchor failure) |
+| `tests/test_ops_status.py` | Public `GET /ops/status` fields, secret exclusion, config, and last scheduler state |
 | `tests/test_agents_api.py` | Agent registry registration, Ed25519 `did:key` binding validation, and lookup with admin key auth |
 | `tests/test_audit_event_auth.py` | Agent API key auth for `POST /audit/events` and public endpoint regression |
 | `tests/test_signatures.py` | Ed25519 key generation, signing, verification, real `did:key` encoding/decoding, and deprecated demo DID helpers |
@@ -147,6 +148,15 @@ Coverage includes:
 - **Anchor failure** — batch remains in SQLite without anchor record; next cycle logs no events
 
 Mocks patch `app.batch_anchoring.anchoring` and `app.batch_anchoring.load_anchoring_config`, same pattern as batch anchor API tests.
+
+## Ops status tests (v1.0-pre)
+
+`tests/test_ops_status.py` covers:
+
+- `GET /ops/status` returns the expected operational fields
+- Response does not include admin key, receipt secret, RPC URL, or private key material
+- Scheduler configuration is reflected from environment variables
+- Last scheduler state (`last_status`, `last_batch_id`, `last_anchor_tx`) updates after a mocked auto-anchor cycle
 
 ## Agent registry tests
 

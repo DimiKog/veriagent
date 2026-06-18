@@ -4,6 +4,25 @@
 
 Returns service health.
 
+## GET /ops/status
+
+Returns read-only operational status for the automatic batch/anchor scheduler. **Public** (no authentication).
+
+Does **not** expose secrets (no private keys, admin key, RPC URL, or receipt secret).
+
+Returns:
+- `service` — `"veriagent"`
+- `version` — API version string (same as `/health`)
+- `auto_anchor_enabled` — value of `VERIAGENT_AUTO_ANCHOR_ENABLED`
+- `interval_seconds` — value of `VERIAGENT_AUTO_ANCHOR_INTERVAL_SECONDS`
+- `min_events` — value of `VERIAGENT_AUTO_ANCHOR_MIN_EVENTS`
+- `scheduler_running` — `true` when the background scheduler task is active
+- `last_run_at` — ISO-8601 timestamp of the most recent scheduler cycle (or `null` before first run)
+- `last_status` — one of: `idle`, `no_events`, `below_threshold`, `batch_created`, `anchor_succeeded`, `anchor_failed`
+- `last_batch_id` — batch ID from the most recent cycle that created a batch (or `null`)
+- `last_anchor_tx` — transaction hash from the most recent successful anchor (or `null`)
+- `last_error` — error message from the most recent failed anchor (or `null`)
+
 ## POST /audit/hash
 
 Computes the RFC8785/JCS canonical hash of an audit event without storing it.

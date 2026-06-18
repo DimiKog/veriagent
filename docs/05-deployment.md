@@ -90,6 +90,14 @@ Optional example Nginx site config: [`deploy/nginx-veriagent-api.conf.example`](
 
 When `VERIAGENT_AUTO_ANCHOR_ENABLED=true`, the API batches and anchors unbatched events on the configured interval without manual `POST /audit/batches` or `POST .../anchor` calls. Requires the same Besu anchoring env vars as manual anchoring. See [03-api.md](03-api.md#automatic-batching-and-anchoring-v10-pre).
 
+Monitor scheduler state with the public **`GET /ops/status`** endpoint (no secrets returned). Example:
+
+```bash
+curl -s https://veriagent.dimikog.org/ops/status | jq .
+```
+
+Check `scheduler_running`, `last_status`, `last_batch_id`, and `last_anchor_tx` after enabling auto anchoring.
+
 Store secrets in a gitignored `.env` on the host or your secrets manager.
 
 ### Deploy or update the backend on the VM

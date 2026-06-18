@@ -594,3 +594,20 @@ Next operational priorities:
 - Deploy v1.0-pre to production VM and verify `/health` reports `1.0-pre`.
 - Enable auto anchoring on production VM after validating Besu anchoring env end to end.
 - Update dashboard to reflect automatic batch/anchor when enabled (optional UX).
+
+## 2026-06-18 (v1.0-pre — Ops status endpoint)
+
+Decisions:
+- Add a **public read-only** operational endpoint for monitoring the auto batch/anchor scheduler without exposing secrets.
+- Track scheduler runtime state in `auto_anchor_scheduler.py` (last run, status, batch ID, tx hash, error).
+- No frontend or Python SDK changes in this release.
+
+Implemented:
+- **`GET /ops/status`** in `backend/app/main.py` — returns service/version, scheduler config, running flag, and last cycle state.
+- **`get_auto_anchor_ops_status()`** and runtime state updates in `backend/app/auto_anchor_scheduler.py`.
+- **`OpsStatusResponse`** model in `backend/app/models.py`.
+- **`tests/test_ops_status.py`** — field shape, secret exclusion, config reflection, post-cycle state.
+- **Docs** — API reference, testing guide, deployment monitoring note.
+
+Tested:
+- `cd backend && python -m pytest` — full suite including ops status tests.
