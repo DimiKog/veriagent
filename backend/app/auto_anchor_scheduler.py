@@ -20,6 +20,7 @@ AUTO_ANCHOR_MIN_EVENTS_ENV = "VERIAGENT_AUTO_ANCHOR_MIN_EVENTS"
 
 DEFAULT_INTERVAL_SECONDS = 300
 DEFAULT_MIN_EVENTS = 1
+SHUTDOWN_GRACE_SECONDS = 10
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +30,18 @@ class AutoAnchorConfig:
     enabled: bool
     interval_seconds: int
     min_events: int
+
+
+def _configure_scheduler_logging() -> None:
+    scheduler_logger = logging.getLogger("app.auto_anchor_scheduler")
+    scheduler_logger.setLevel(logging.INFO)
+    root = logging.getLogger()
+    if root.handlers:
+        return
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(levelname)s [%(name)s] %(message)s",
+    )
 
 
 def _parse_bool(value: str) -> bool:
@@ -78,19 +91,32 @@ def load_auto_anchor_config() -> AutoAnchorConfig:
     )
 
 
+def _log_auto_anchor_startup(config: AutoAnchorConfig) -> None:
+    logger.info("auto anchor: enabled=%s", config.enabled)
+    logger.info("auto anchor: interval_seconds=%s", config.interval_seconds)
+    logger.info("auto anchor: min_events=%s", config.min_events)
+
+
 def run_auto_anchor_cycle(
     *,
     db_path: Any = None,
     config: AutoAnchorConfig | None = None,
 ) -> None:
     cfg = config or load_auto_anchor_config()
+    logger.info("auto anchor: checking unbatched events")
     unbatched_count = len(list_unbatched_events(db_path))
+    logger.info("auto anchor: unbatched event count=%d", unbatched_count)
 
     if unbatched_count == 0:
         logger.info("auto anchor: no events")
         return
 
     if unbatched_count < cfg.min_events:
+        logger.info(
+            "auto anchor: below threshold (count=%d, min=%d)",
+            unbatched_count,
+            cfg.min_events,
+        )
         return
 
     try:
@@ -128,35 +154,52 @@ async def _auto_anchor_scheduler_loop(
     stop_event: asyncio.Event,
     config: AutoAnchorConfig,
 ) -> None:
-    logger.info(
-        "auto anchor scheduler started (interval=%ss, min_events=%s)",
-        config.interval_seconds,
-        config.min_events,
-    )
-    while not stop_event.is_set():
-        try:
-            await asyncio.to_thread(run_auto_anchor_cycle, config=config)
-        except Exception:
-            logger.exception("auto anchor scheduler cycle failed")
+    try:
+        while not stop_event.is_set():
+            try:
+                await asyncio.to_thread(run_auto_anchor_cycle, config=config)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("auto anchor scheduler cycle failed")
 
-        try:
-            await asyncio.wait_for(stop_event.wait(), timeout=config.interval_seconds)
-        except TimeoutError:
-            pass
+            if stop_event.is_set():
+                break
+
+            try:
+                await asyncio.wait_for(
+                    stop_event.wait(),
+                    timeout=config.interval_seconds,
+                )
+            except asyncio.TimeoutError:
+                continue
+            except asyncio.CancelledError:
+                raise
+    except asyncio.CancelledError:
+        logger.info("auto anchor: scheduler task cancelled")
+        raise
 
 
 def start_auto_anchor_scheduler() -> tuple[asyncio.Task[None] | None, asyncio.Event | None]:
+    _configure_scheduler_logging()
     try:
         config = load_auto_anchor_config()
     except Exception:
         logger.exception("auto anchor scheduler failed to start")
         return None, None
 
+    _log_auto_anchor_startup(config)
+
     if not config.enabled:
+        logger.info("auto anchor: scheduler disabled")
         return None, None
 
     stop_event = asyncio.Event()
-    task = asyncio.create_task(_auto_anchor_scheduler_loop(stop_event, config))
+    task = asyncio.create_task(
+        _auto_anchor_scheduler_loop(stop_event, config),
+        name="auto-anchor-scheduler",
+    )
+    logger.info("auto anchor: scheduler task started")
     return task, stop_event
 
 
@@ -167,8 +210,24 @@ async def stop_auto_anchor_scheduler(
     if task is None or stop_event is None:
         return
 
+    logger.info("auto anchor: scheduler stopping")
     stop_event.set()
+
     try:
-        await task
+        await asyncio.wait_for(task, timeout=SHUTDOWN_GRACE_SECONDS)
+    except asyncio.TimeoutError:
+        logger.warning(
+            "auto anchor: scheduler did not stop within %ss; cancelling task",
+            SHUTDOWN_GRACE_SECONDS,
+        )
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
     except asyncio.CancelledError:
         pass
+    except Exception:
+        logger.exception("auto anchor: scheduler stop encountered an error")
+
+    logger.info("auto anchor: scheduler stopped")

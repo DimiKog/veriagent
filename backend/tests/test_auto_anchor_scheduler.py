@@ -1,9 +1,17 @@
+import asyncio
 import logging
+import time
 
 from eth_typing import ChecksumAddress
 
 from app.anchoring import AnchorTransactionFailedError, AnchoringConfig, OnchainBatch
-from app.auto_anchor_scheduler import AutoAnchorConfig, run_auto_anchor_cycle
+from app.auto_anchor_scheduler import (
+    AutoAnchorConfig,
+    _auto_anchor_scheduler_loop,
+    run_auto_anchor_cycle,
+    start_auto_anchor_scheduler,
+    stop_auto_anchor_scheduler,
+)
 from app.hashing import canonicalize_event, hash_event
 from app.models import AuditEvent
 from app.storage import (
@@ -84,6 +92,8 @@ def test_auto_anchor_cycle_no_events(isolated_db, caplog):
 
     run_auto_anchor_cycle(db_path=isolated_db, config=DEFAULT_CONFIG)
 
+    assert "auto anchor: checking unbatched events" in caplog.text
+    assert "auto anchor: unbatched event count=0" in caplog.text
     assert "auto anchor: no events" in caplog.text
     assert list_unbatched_events(isolated_db) == []
 
@@ -96,6 +106,7 @@ def test_auto_anchor_cycle_below_threshold(isolated_db, caplog):
     run_auto_anchor_cycle(db_path=isolated_db, config=config)
 
     assert "auto anchor: no events" not in caplog.text
+    assert "auto anchor: below threshold" in caplog.text
     assert "auto anchor: batch created" not in caplog.text
     assert len(list_unbatched_events(isolated_db)) == 1
 
@@ -188,3 +199,103 @@ def test_auto_anchor_cycle_anchor_failure_keeps_batch_and_next_run_continues(
     caplog.clear()
     run_auto_anchor_cycle(db_path=isolated_db, config=DEFAULT_CONFIG)
     assert "auto anchor: no events" in caplog.text
+
+
+def test_start_auto_anchor_scheduler_logs_disabled(monkeypatch, caplog):
+    caplog.set_level(logging.INFO, logger="app.auto_anchor_scheduler")
+    monkeypatch.setenv("VERIAGENT_AUTO_ANCHOR_ENABLED", "false")
+
+    task, stop_event = start_auto_anchor_scheduler()
+
+    assert task is None
+    assert stop_event is None
+    assert "auto anchor: enabled=False" in caplog.text
+    assert "auto anchor: scheduler disabled" in caplog.text
+
+
+def test_start_auto_anchor_scheduler_logs_enabled_and_starts_task(monkeypatch, caplog):
+    caplog.set_level(logging.INFO, logger="app.auto_anchor_scheduler")
+    monkeypatch.setenv("VERIAGENT_AUTO_ANCHOR_ENABLED", "true")
+    monkeypatch.setenv("VERIAGENT_AUTO_ANCHOR_INTERVAL_SECONDS", "3600")
+    monkeypatch.setenv("VERIAGENT_AUTO_ANCHOR_MIN_EVENTS", "3")
+
+    async def run():
+        task, stop_event = start_auto_anchor_scheduler()
+
+        assert task is not None
+        assert stop_event is not None
+        assert "auto anchor: enabled=True" in caplog.text
+        assert "auto anchor: interval_seconds=3600" in caplog.text
+        assert "auto anchor: min_events=3" in caplog.text
+        assert "auto anchor: scheduler task started" in caplog.text
+
+        await stop_auto_anchor_scheduler(task, stop_event)
+        assert task.done()
+
+    asyncio.run(run())
+
+
+def test_scheduler_loop_runs_initial_cycle_before_first_wait(monkeypatch):
+    calls: list[int] = []
+
+    def track_cycle(**kwargs):
+        calls.append(1)
+
+    monkeypatch.setattr("app.auto_anchor_scheduler.run_auto_anchor_cycle", track_cycle)
+
+    async def run():
+        stop_event = asyncio.Event()
+        config = AutoAnchorConfig(enabled=True, interval_seconds=3600, min_events=1)
+        task = asyncio.create_task(_auto_anchor_scheduler_loop(stop_event, config))
+        await asyncio.sleep(0.05)
+        await stop_auto_anchor_scheduler(task, stop_event)
+
+    asyncio.run(run())
+    assert len(calls) >= 1
+
+
+def test_stop_auto_anchor_scheduler_graceful_when_idle():
+    async def run():
+        stop_event = asyncio.Event()
+        config = AutoAnchorConfig(enabled=True, interval_seconds=3600, min_events=1)
+        task = asyncio.create_task(_auto_anchor_scheduler_loop(stop_event, config))
+        await asyncio.sleep(0.05)
+        await stop_auto_anchor_scheduler(task, stop_event)
+        assert task.done()
+
+    asyncio.run(run())
+
+
+def test_stop_auto_anchor_scheduler_handles_timeout_without_raising(monkeypatch):
+    monkeypatch.setattr("app.auto_anchor_scheduler.SHUTDOWN_GRACE_SECONDS", 0.1)
+
+    def slow_cycle(**kwargs):
+        time.sleep(2)
+
+    monkeypatch.setattr("app.auto_anchor_scheduler.run_auto_anchor_cycle", slow_cycle)
+
+    async def run():
+        stop_event = asyncio.Event()
+        config = AutoAnchorConfig(enabled=True, interval_seconds=3600, min_events=1)
+        task = asyncio.create_task(_auto_anchor_scheduler_loop(stop_event, config))
+        await asyncio.sleep(0.05)
+        await stop_auto_anchor_scheduler(task, stop_event)
+        assert task.done()
+
+    asyncio.run(run())
+
+
+def test_app_lifespan_shutdown_with_scheduler_enabled(monkeypatch):
+    monkeypatch.setenv("VERIAGENT_AUTO_ANCHOR_ENABLED", "true")
+    monkeypatch.setenv("VERIAGENT_AUTO_ANCHOR_INTERVAL_SECONDS", "3600")
+    monkeypatch.setattr(
+        "app.auto_anchor_scheduler.run_auto_anchor_cycle",
+        lambda **kwargs: None,
+    )
+
+    from fastapi.testclient import TestClient
+    from app.main import app
+
+    with TestClient(app) as client:
+        response = client.get("/health")
+        assert response.status_code == 200
