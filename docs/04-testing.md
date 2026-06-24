@@ -57,6 +57,7 @@ python -m pytest -v
 | `tests/test_auto_anchor_scheduler.py` | Automatic batch/anchor scheduler cycle (no events, threshold, anchor failure) |
 | `tests/test_ops_status.py` | Public `GET /ops/status` fields, secret exclusion, config, and last scheduler state |
 | `tests/test_agents_api.py` | Agent registry registration, Ed25519 `did:key` binding validation, and lookup with admin key auth |
+| `tests/test_registration_requests.py` | Registration request create/proof/status workflow, feature flag, challenge expiry, and duplicate DID constraints |
 | `tests/test_audit_event_auth.py` | Agent API key auth for `POST /audit/events` and public endpoint regression |
 | `tests/test_signatures.py` | Ed25519 key generation, signing, verification, real `did:key` encoding/decoding, and deprecated demo DID helpers |
 | `tests/test_signed_audit_events.py` | Ed25519 event signature enforcement on ingestion and stored metadata |
@@ -169,6 +170,33 @@ Agent registry API tests cover:
 - `GET /agents/{agent_did}` returns metadata without `api_key_hash` or raw `api_key`
 - `404 Not Found` for unregistered agents
 - Stored row contains SHA-256 hash of the issued API key, not the raw key
+
+## Registration request tests (Phase 1–2)
+
+`tests/test_registration_requests.py` covers the public registration request workflow (approval endpoints not implemented yet).
+
+Enable registration in tests via fixture:
+
+```python
+monkeypatch.setenv("VERIAGENT_REGISTRATION_ENABLED", "true")
+```
+
+Coverage includes:
+
+- Registration routes return `404` when `VERIAGENT_REGISTRATION_ENABLED=false` (default)
+- Successful `POST /registration/requests` returns `request_id`, challenge fields, and unsigned `proof_payload` (no `api_key`)
+- `409 Conflict` for duplicate pending request on the same `agent_did`
+- `409 Conflict` when the agent DID is already registered via admin `POST /agents/register`
+- `400 Bad Request` for invalid `agent_did`
+- Valid proof submission signs JCS-canonical `proof_payload` with Ed25519 and sets `proof_submitted_at`
+- Invalid proof signature returns `403 Forbidden`
+- Expired challenge returns `410 Gone` and transitions request to `status = expired`
+- `GET /registration/requests/{id}` status polling never returns `api_key`, `challenge_nonce`, or `proof_payload`
+- `expire_stale_requests()` marks overdue pending requests as `expired`
+
+Proof signing in tests uses `canonicalize_dict()` from `app.hashing` and `sign_bytes()` from `app.signatures`, matching audit event signing.
+
+Existing agent registry tests in `tests/test_agents_api.py` continue to use admin `POST /agents/register` unchanged.
 
 ## Audit event auth tests
 

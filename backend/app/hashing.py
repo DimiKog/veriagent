@@ -14,3 +14,7 @@ def canonicalize_event(event: AuditEvent) -> bytes:
 def hash_event(event: AuditEvent) -> str:
     canonical_bytes = canonicalize_event(event)
     return hashlib.sha256(canonical_bytes).hexdigest()
+
+
+def canonicalize_dict(data: dict[str, Any]) -> bytes:
+    return jcs.canonicalize(data)

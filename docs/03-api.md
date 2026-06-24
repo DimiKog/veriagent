@@ -347,3 +347,98 @@ Never returns `api_key` or `api_key_hash`.
 Returns `401 Unauthorized` when the admin key is missing or invalid.
 
 Returns `404 Not Found` when the agent is not registered.
+
+## Registration requests (Phase 1–2)
+
+Self-service registration request workflow with proof-of-control. **Disabled by default.**
+
+Master switch: `VERIAGENT_REGISTRATION_ENABLED=false` (set to `true` to enable public routes).
+
+Challenge lifetime: `VERIAGENT_REGISTRATION_CHALLENGE_TTL_MINUTES` (default `15`).
+
+When disabled, all registration routes return `404 Not Found` with detail `Registration is not enabled`.
+
+Approval endpoints (`GET /registration/requests`, `POST .../approve`, `POST .../reject`) are **not implemented yet**. No agent row or API key is created until Phase 3 approval ships.
+
+### POST /registration/requests
+
+Creates a registration request and returns a proof-of-control challenge. **Public** (no authentication).
+
+Request body:
+- `agent_did` — must be a valid Ed25519 `did:key` (`did:key:z...`)
+- `agent_name`, `agent_type`, optional `description`
+- `verification_method` — must equal `{agent_did}#{multibase_value}`
+- `public_key` — base64-encoded raw 32-byte Ed25519 public key; must match the key encoded in `agent_did`
+- `organization_name`, `contact_email`, `use_case_summary` — applicant metadata for operator review
+
+Behavior:
+1. validates Ed25519 `did:key` binding (same rules as `POST /agents/register`),
+2. rejects when the DID is already registered or has a pending request,
+3. generates `challenge_nonce` and `challenge_expires_at`,
+4. stores request with `status = pending` and unsigned `proof_payload_json`,
+5. returns `request_id`, challenge fields, and the unsigned `proof_payload` object to sign.
+
+Returns:
+- `request_id`
+- `agent_did`
+- `challenge_nonce`
+- `challenge_expires_at`
+- `proof_payload` — unsigned object with `purpose`, `request_id`, `agent_did`, `nonce`, `issued_at`, `expires_at`
+
+The applicant signs the **RFC8785/JCS canonical bytes** of `proof_payload` with the Ed25519 private key for `agent_did`.
+
+Returns `400 Bad Request` for invalid DID/key binding.
+
+Returns `409 Conflict` when the agent DID is already registered or already has a pending request (generic message — does not distinguish active vs pending).
+
+Never returns `api_key`.
+
+### POST /registration/requests/{request_id}/proof
+
+Submits proof-of-control for a pending request. **Public** (no authentication).
+
+Request body:
+- `proof_signature` — base64-encoded Ed25519 signature over the JCS-canonical `proof_payload` from create response
+- `verification_method` — must match the request's registered verification method
+
+Behavior:
+1. loads request; expires stale pending requests whose `challenge_expires_at` has passed,
+2. rejects if request is not `pending` or challenge has expired (expired requests transition to `status = expired`),
+3. verifies JCS canonical bytes from stored `proof_payload_json`,
+4. verifies Ed25519 signature against stored `public_key`,
+5. sets `proof_submitted_at`.
+
+Returns:
+- `request_id`
+- `status` — remains `pending` until operator approval (Phase 3)
+- `proof_submitted_at`
+
+Returns `403 Forbidden` for invalid signature or mismatched `verification_method`.
+
+Returns `404 Not Found` when the request does not exist.
+
+Returns `409 Conflict` when the request is not pending.
+
+Returns `410 Gone` when the challenge has expired.
+
+### GET /registration/requests/{request_id}
+
+Applicant status poll. **Public** (no authentication).
+
+Returns status metadata only:
+- `request_id`
+- `status` — `pending`, `approved`, `rejected`, or `expired`
+- `agent_did`
+- `created_at`
+- `challenge_expires_at` — present while `status = pending`
+- `proof_submitted_at` — set after successful proof submission
+- `reviewed_at` — set after operator approval or rejection (Phase 3)
+- `credentials_available` — `true` when approved credentials can be retrieved via one-time token (Phase 3)
+
+Never returns `api_key`, `challenge_nonce`, `proof_payload`, or `public_key`.
+
+Returns `404 Not Found` when registration is disabled or the request does not exist.
+
+Request states: `pending` → `approved` | `rejected` | `expired` (terminal). Stale pending requests are marked `expired` via `expire_stale_requests()` on proof and status reads.
+
+Design reference: [14-registration-workflow.md](14-registration-workflow.md).

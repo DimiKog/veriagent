@@ -19,6 +19,18 @@ class AgentAlreadyExistsError(Exception):
     pass
 
 
+class RegistrationRequestNotFoundError(Exception):
+    pass
+
+
+class DuplicatePendingRegistrationError(Exception):
+    pass
+
+
+class RegistrationRequestNotPendingError(Exception):
+    pass
+
+
 class NoUnbatchedEventsError(Exception):
     pass
 
@@ -61,6 +73,38 @@ class StoredAgent:
     api_key_hash: str
     status: str
     created_at: str
+
+
+REGISTRATION_REQUEST_STATUSES = ("pending", "approved", "rejected", "expired")
+
+
+@dataclass(frozen=True)
+class StoredRegistrationRequest:
+    request_id: str
+    agent_did: str
+    agent_name: str
+    agent_type: str
+    description: str | None
+    organization_name: str
+    contact_email: str
+    use_case_summary: str
+    status: str
+    challenge_nonce: str
+    challenge_expires_at: str
+    proof_signature: str | None
+    proof_submitted_at: str | None
+    proof_payload_json: str
+    reviewed_by: str | None
+    reviewed_at: str | None
+    review_notes: str | None
+    approved_agent_did: str | None
+    retrieval_token_hash: str | None
+    credentials_retrieved_at: str | None
+    client_ip_hash: str | None
+    created_at: str
+    updated_at: str
+    public_key: str
+    verification_method: str
 
 
 @dataclass(frozen=True)
@@ -169,6 +213,59 @@ def init_db(db_path: Path | str | None = None) -> None:
                 status TEXT NOT NULL,
                 created_at TEXT NOT NULL
             )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS registration_requests (
+                request_id TEXT PRIMARY KEY,
+                agent_did TEXT NOT NULL,
+                agent_name TEXT NOT NULL,
+                agent_type TEXT NOT NULL,
+                description TEXT,
+                organization_name TEXT NOT NULL,
+                contact_email TEXT NOT NULL,
+                use_case_summary TEXT NOT NULL,
+                status TEXT NOT NULL CHECK (
+                    status IN ('pending', 'approved', 'rejected', 'expired')
+                ),
+                challenge_nonce TEXT NOT NULL,
+                challenge_expires_at TEXT NOT NULL,
+                proof_signature TEXT,
+                proof_submitted_at TEXT,
+                proof_payload_json TEXT NOT NULL,
+                reviewed_by TEXT,
+                reviewed_at TEXT,
+                review_notes TEXT,
+                approved_agent_did TEXT,
+                retrieval_token_hash TEXT,
+                credentials_retrieved_at TEXT,
+                client_ip_hash TEXT,
+                public_key TEXT NOT NULL,
+                verification_method TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (approved_agent_did) REFERENCES agents(agent_did)
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_registration_requests_status
+            ON registration_requests(status)
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_registration_requests_agent_did
+            ON registration_requests(agent_did)
+            """
+        )
+        conn.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_registration_requests_pending_did
+            ON registration_requests(agent_did)
+            WHERE status = 'pending'
             """
         )
         conn.commit()
@@ -566,6 +663,239 @@ def get_agent(
         status=row["status"],
         created_at=row["created_at"],
     )
+
+
+def _stored_registration_request_from_row(row: sqlite3.Row) -> StoredRegistrationRequest:
+    return StoredRegistrationRequest(
+        request_id=row["request_id"],
+        agent_did=row["agent_did"],
+        agent_name=row["agent_name"],
+        agent_type=row["agent_type"],
+        description=row["description"],
+        organization_name=row["organization_name"],
+        contact_email=row["contact_email"],
+        use_case_summary=row["use_case_summary"],
+        status=row["status"],
+        challenge_nonce=row["challenge_nonce"],
+        challenge_expires_at=row["challenge_expires_at"],
+        proof_signature=row["proof_signature"],
+        proof_submitted_at=row["proof_submitted_at"],
+        proof_payload_json=row["proof_payload_json"],
+        reviewed_by=row["reviewed_by"],
+        reviewed_at=row["reviewed_at"],
+        review_notes=row["review_notes"],
+        approved_agent_did=row["approved_agent_did"],
+        retrieval_token_hash=row["retrieval_token_hash"],
+        credentials_retrieved_at=row["credentials_retrieved_at"],
+        client_ip_hash=row["client_ip_hash"],
+        public_key=row["public_key"],
+        verification_method=row["verification_method"],
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+    )
+
+
+def create_registration_request(
+    request_id: str,
+    agent_did: str,
+    agent_name: str,
+    agent_type: str,
+    description: str | None,
+    organization_name: str,
+    contact_email: str,
+    use_case_summary: str,
+    verification_method: str,
+    public_key: str,
+    challenge_nonce: str,
+    challenge_expires_at: str,
+    proof_payload_json: str,
+    client_ip_hash: str | None = None,
+    db_path: Path | str | None = None,
+) -> StoredRegistrationRequest:
+    init_db(db_path)
+    now = datetime.now(timezone.utc).isoformat()
+    try:
+        with _connect(db_path) as conn:
+            conn.execute(
+                """
+                INSERT INTO registration_requests (
+                    request_id,
+                    agent_did,
+                    agent_name,
+                    agent_type,
+                    description,
+                    organization_name,
+                    contact_email,
+                    use_case_summary,
+                    status,
+                    challenge_nonce,
+                    challenge_expires_at,
+                    proof_payload_json,
+                    public_key,
+                    verification_method,
+                    client_ip_hash,
+                    created_at,
+                    updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    request_id,
+                    agent_did,
+                    agent_name,
+                    agent_type,
+                    description,
+                    organization_name,
+                    contact_email,
+                    use_case_summary,
+                    challenge_nonce,
+                    challenge_expires_at,
+                    proof_payload_json,
+                    public_key,
+                    verification_method,
+                    client_ip_hash,
+                    now,
+                    now,
+                ),
+            )
+            conn.commit()
+    except sqlite3.IntegrityError as exc:
+        raise DuplicatePendingRegistrationError(agent_did) from exc
+
+    stored = get_registration_request(request_id, db_path=db_path)
+    assert stored is not None
+    return stored
+
+
+def get_registration_request(
+    request_id: str,
+    db_path: Path | str | None = None,
+) -> StoredRegistrationRequest | None:
+    init_db(db_path)
+    with _connect(db_path) as conn:
+        row = conn.execute(
+            """
+            SELECT
+                request_id,
+                agent_did,
+                agent_name,
+                agent_type,
+                description,
+                organization_name,
+                contact_email,
+                use_case_summary,
+                status,
+                challenge_nonce,
+                challenge_expires_at,
+                proof_signature,
+                proof_submitted_at,
+                proof_payload_json,
+                reviewed_by,
+                reviewed_at,
+                review_notes,
+                approved_agent_did,
+                retrieval_token_hash,
+                credentials_retrieved_at,
+                client_ip_hash,
+                public_key,
+                verification_method,
+                created_at,
+                updated_at
+            FROM registration_requests
+            WHERE request_id = ?
+            """,
+            (request_id,),
+        ).fetchone()
+
+    if row is None:
+        return None
+
+    return _stored_registration_request_from_row(row)
+
+
+def submit_registration_proof(
+    request_id: str,
+    proof_signature: str,
+    db_path: Path | str | None = None,
+) -> StoredRegistrationRequest:
+    init_db(db_path)
+    now = datetime.now(timezone.utc).isoformat()
+    with _connect(db_path) as conn:
+        row = conn.execute(
+            """
+            SELECT status FROM registration_requests WHERE request_id = ?
+            """,
+            (request_id,),
+        ).fetchone()
+        if row is None:
+            raise RegistrationRequestNotFoundError(request_id)
+        if row["status"] != "pending":
+            raise RegistrationRequestNotPendingError(request_id)
+
+        conn.execute(
+            """
+            UPDATE registration_requests
+            SET proof_signature = ?,
+                proof_submitted_at = ?,
+                updated_at = ?
+            WHERE request_id = ?
+            """,
+            (proof_signature, now, now, request_id),
+        )
+        conn.commit()
+
+    stored = get_registration_request(request_id, db_path=db_path)
+    assert stored is not None
+    return stored
+
+
+def mark_registration_request_expired(
+    request_id: str,
+    db_path: Path | str | None = None,
+) -> StoredRegistrationRequest:
+    init_db(db_path)
+    now = datetime.now(timezone.utc).isoformat()
+    with _connect(db_path) as conn:
+        row = conn.execute(
+            """
+            SELECT status FROM registration_requests WHERE request_id = ?
+            """,
+            (request_id,),
+        ).fetchone()
+        if row is None:
+            raise RegistrationRequestNotFoundError(request_id)
+        if row["status"] != "pending":
+            raise RegistrationRequestNotPendingError(request_id)
+
+        conn.execute(
+            """
+            UPDATE registration_requests
+            SET status = 'expired', updated_at = ?
+            WHERE request_id = ?
+            """,
+            (now, request_id),
+        )
+        conn.commit()
+
+    stored = get_registration_request(request_id, db_path=db_path)
+    assert stored is not None
+    return stored
+
+
+def expire_stale_requests(db_path: Path | str | None = None) -> int:
+    init_db(db_path)
+    now = datetime.now(timezone.utc).isoformat()
+    with _connect(db_path) as conn:
+        cursor = conn.execute(
+            """
+            UPDATE registration_requests
+            SET status = 'expired', updated_at = ?
+            WHERE status = 'pending'
+              AND challenge_expires_at < ?
+            """,
+            (now, now),
+        )
+        conn.commit()
+        return cursor.rowcount
 
 
 def get_agent_by_api_key_hash(

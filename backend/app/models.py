@@ -139,6 +139,57 @@ class AgentResponse(BaseModel):
     created_at: str
 
 
+class CreateRegistrationRequest(BaseModel):
+    agent_did: str
+    agent_name: str
+    agent_type: str
+    description: str | None = None
+    verification_method: str
+    public_key: str
+    organization_name: str
+    contact_email: str
+    use_case_summary: str
+
+
+class RegistrationProofPayload(BaseModel):
+    purpose: str
+    request_id: str
+    agent_did: str
+    nonce: str
+    issued_at: str
+    expires_at: str
+
+
+class CreateRegistrationRequestResponse(BaseModel):
+    request_id: str
+    agent_did: str
+    challenge_nonce: str
+    challenge_expires_at: str
+    proof_payload: RegistrationProofPayload
+
+
+class SubmitRegistrationProofRequest(BaseModel):
+    proof_signature: str
+    verification_method: str
+
+
+class SubmitRegistrationProofResponse(BaseModel):
+    request_id: str
+    status: str
+    proof_submitted_at: str
+
+
+class RegistrationRequestStatusResponse(BaseModel):
+    request_id: str
+    status: str
+    agent_did: str
+    created_at: str
+    challenge_expires_at: str | None = None
+    proof_submitted_at: str | None = None
+    reviewed_at: str | None = None
+    credentials_available: bool = False
+
+
 AutoAnchorLastStatus = Literal[
     "idle",
     "no_events",

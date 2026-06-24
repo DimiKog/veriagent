@@ -1,7 +1,7 @@
 import hmac
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.hashing import canonicalize_event, hash_event
@@ -27,6 +27,12 @@ from app.models import (
     MerkleVerifyResponse,
     RegisterAgentRequest,
     RegisterAgentResponse,
+    CreateRegistrationRequest,
+    CreateRegistrationRequestResponse,
+    SubmitRegistrationProofRequest,
+    SubmitRegistrationProofResponse,
+    RegistrationRequestStatusResponse,
+    RegistrationProofPayload,
     OpsStatusResponse,
     SignedAuditEventRequest,
     StoreEventResponse,
@@ -40,10 +46,22 @@ from app.signatures import (
     verify_signature,
 )
 from app.auto_anchor_scheduler import get_auto_anchor_ops_status, start_auto_anchor_scheduler, stop_auto_anchor_scheduler
+from app.registration import (
+    RegistrationChallengeExpiredError,
+    RegistrationProofInvalidError,
+    create_registration_request_with_challenge,
+    get_registration_request_status,
+    hash_client_ip,
+    is_registration_enabled,
+    submit_registration_request_proof,
+)
 from app.storage import (
     AgentAlreadyExistsError,
+    DuplicatePendingRegistrationError,
     EventAlreadyExistsError,
     NoUnbatchedEventsError,
+    RegistrationRequestNotFoundError,
+    RegistrationRequestNotPendingError,
     StoredAgent,
     StoredBatchAnchor,
     create_batch_from_unbatched,
@@ -110,6 +128,33 @@ def _agent_response(agent: StoredAgent) -> AgentResponse:
         public_key=agent.public_key,
         status=agent.status,
         created_at=agent.created_at,
+    )
+
+
+def require_registration_enabled() -> None:
+    if not is_registration_enabled():
+        raise HTTPException(status_code=404, detail="Registration is not enabled")
+
+
+def _registration_status_response(
+    stored,
+) -> RegistrationRequestStatusResponse:
+    credentials_available = (
+        stored.status == "approved"
+        and stored.retrieval_token_hash is not None
+        and stored.credentials_retrieved_at is None
+    )
+    return RegistrationRequestStatusResponse(
+        request_id=stored.request_id,
+        status=stored.status,
+        agent_did=stored.agent_did,
+        created_at=stored.created_at,
+        challenge_expires_at=stored.challenge_expires_at
+        if stored.status == "pending"
+        else None,
+        proof_submitted_at=stored.proof_submitted_at,
+        reviewed_at=stored.reviewed_at,
+        credentials_available=credentials_available,
     )
 
 
@@ -373,6 +418,111 @@ def register_agent_endpoint(
         **_agent_response(stored).model_dump(),
         api_key=api_key,
     )
+
+
+@app.post(
+    "/registration/requests",
+    response_model=CreateRegistrationRequestResponse,
+)
+def create_registration_request_endpoint(
+    request: CreateRegistrationRequest,
+    http_request: Request,
+    _: None = Depends(require_registration_enabled),
+):
+    client_ip = http_request.client.host if http_request.client else None
+    try:
+        stored, proof_payload = create_registration_request_with_challenge(
+            agent_did=request.agent_did,
+            agent_name=request.agent_name,
+            agent_type=request.agent_type,
+            description=request.description,
+            organization_name=request.organization_name,
+            contact_email=request.contact_email,
+            use_case_summary=request.use_case_summary,
+            verification_method=request.verification_method,
+            public_key=request.public_key,
+            client_ip_hash=hash_client_ip(client_ip),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except AgentAlreadyExistsError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="A registration request cannot be created for this agent DID",
+        ) from exc
+    except DuplicatePendingRegistrationError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="A registration request cannot be created for this agent DID",
+        ) from exc
+
+    return CreateRegistrationRequestResponse(
+        request_id=stored.request_id,
+        agent_did=stored.agent_did,
+        challenge_nonce=stored.challenge_nonce,
+        challenge_expires_at=stored.challenge_expires_at,
+        proof_payload=RegistrationProofPayload(**proof_payload),
+    )
+
+
+@app.post(
+    "/registration/requests/{request_id}/proof",
+    response_model=SubmitRegistrationProofResponse,
+)
+def submit_registration_proof_endpoint(
+    request_id: str,
+    request: SubmitRegistrationProofRequest,
+    _: None = Depends(require_registration_enabled),
+):
+    try:
+        stored = submit_registration_request_proof(
+            request_id=request_id,
+            proof_signature=request.proof_signature,
+            verification_method=request.verification_method,
+        )
+    except RegistrationRequestNotFoundError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Registration request not found: {exc.args[0]}",
+        ) from exc
+    except RegistrationRequestNotPendingError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Registration request is not pending: {exc.args[0]}",
+        ) from exc
+    except RegistrationChallengeExpiredError as exc:
+        raise HTTPException(
+            status_code=410,
+            detail=f"Registration challenge expired: {exc.args[0]}",
+        ) from exc
+    except RegistrationProofInvalidError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+    assert stored.proof_submitted_at is not None
+    return SubmitRegistrationProofResponse(
+        request_id=stored.request_id,
+        status=stored.status,
+        proof_submitted_at=stored.proof_submitted_at,
+    )
+
+
+@app.get(
+    "/registration/requests/{request_id}",
+    response_model=RegistrationRequestStatusResponse,
+)
+def get_registration_request_endpoint(
+    request_id: str,
+    _: None = Depends(require_registration_enabled),
+):
+    try:
+        stored = get_registration_request_status(request_id)
+    except RegistrationRequestNotFoundError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Registration request not found: {exc.args[0]}",
+        ) from exc
+
+    return _registration_status_response(stored)
 
 
 @app.get("/agents/{agent_did}", response_model=AgentResponse)
