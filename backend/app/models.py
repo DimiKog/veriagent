@@ -190,6 +190,62 @@ class RegistrationRequestStatusResponse(BaseModel):
     credentials_available: bool = False
 
 
+class RegistrationRequestReviewBody(BaseModel):
+    review_notes: str | None = None
+
+
+class AdminRegistrationRequestSummary(BaseModel):
+    request_id: str
+    agent_did: str
+    agent_name: str
+    agent_type: str
+    description: str | None = None
+    organization_name: str
+    contact_email: str
+    use_case_summary: str
+    status: str
+    verification_method: str
+    public_key: str
+    challenge_expires_at: str
+    proof_submitted_at: str | None = None
+    reviewed_by: str | None = None
+    reviewed_at: str | None = None
+    review_notes: str | None = None
+    approved_agent_did: str | None = None
+    created_at: str
+    updated_at: str
+
+
+class AdminRegistrationRequestListResponse(BaseModel):
+    requests: list[AdminRegistrationRequestSummary]
+
+
+class ApproveRegistrationRequestResponse(BaseModel):
+    request_id: str
+    status: str
+    agent_did: str
+    agent_name: str
+    agent_type: str
+    description: str | None = None
+    verification_method: str
+    public_key: str
+    agent_status: str
+    created_at: str
+    reviewed_at: str
+    review_notes: str | None = None
+    approved_agent_did: str
+    api_key: str
+
+
+class RejectRegistrationRequestResponse(BaseModel):
+    request_id: str
+    status: str
+    agent_did: str
+    reviewed_at: str
+    reviewed_by: str
+    review_notes: str | None = None
+
+
 AutoAnchorLastStatus = Literal[
     "idle",
     "no_events",

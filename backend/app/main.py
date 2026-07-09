@@ -32,6 +32,11 @@ from app.models import (
     SubmitRegistrationProofRequest,
     SubmitRegistrationProofResponse,
     RegistrationRequestStatusResponse,
+    RegistrationRequestReviewBody,
+    AdminRegistrationRequestSummary,
+    AdminRegistrationRequestListResponse,
+    ApproveRegistrationRequestResponse,
+    RejectRegistrationRequestResponse,
     RegistrationProofPayload,
     OpsStatusResponse,
     SignedAuditEventRequest,
@@ -49,10 +54,13 @@ from app.auto_anchor_scheduler import get_auto_anchor_ops_status, start_auto_anc
 from app.registration import (
     RegistrationChallengeExpiredError,
     RegistrationProofInvalidError,
+    approve_registration_request_by_admin,
     create_registration_request_with_challenge,
     get_registration_request_status,
     hash_client_ip,
     is_registration_enabled,
+    list_registration_requests_for_admin,
+    reject_registration_request_by_admin,
     submit_registration_request_proof,
 )
 from app.storage import (
@@ -60,6 +68,8 @@ from app.storage import (
     DuplicatePendingRegistrationError,
     EventAlreadyExistsError,
     NoUnbatchedEventsError,
+    RegistrationProofNotSubmittedError,
+    RegistrationRequestExpiredError,
     RegistrationRequestNotFoundError,
     RegistrationRequestNotPendingError,
     StoredAgent,
@@ -155,6 +165,32 @@ def _registration_status_response(
         proof_submitted_at=stored.proof_submitted_at,
         reviewed_at=stored.reviewed_at,
         credentials_available=credentials_available,
+    )
+
+
+def _admin_registration_request_summary(
+    stored,
+) -> AdminRegistrationRequestSummary:
+    return AdminRegistrationRequestSummary(
+        request_id=stored.request_id,
+        agent_did=stored.agent_did,
+        agent_name=stored.agent_name,
+        agent_type=stored.agent_type,
+        description=stored.description,
+        organization_name=stored.organization_name,
+        contact_email=stored.contact_email,
+        use_case_summary=stored.use_case_summary,
+        status=stored.status,
+        verification_method=stored.verification_method,
+        public_key=stored.public_key,
+        challenge_expires_at=stored.challenge_expires_at,
+        proof_submitted_at=stored.proof_submitted_at,
+        reviewed_by=stored.reviewed_by,
+        reviewed_at=stored.reviewed_at,
+        review_notes=stored.review_notes,
+        approved_agent_did=stored.approved_agent_did,
+        created_at=stored.created_at,
+        updated_at=stored.updated_at,
     )
 
 
@@ -503,6 +539,132 @@ def submit_registration_proof_endpoint(
         request_id=stored.request_id,
         status=stored.status,
         proof_submitted_at=stored.proof_submitted_at,
+    )
+
+
+@app.get(
+    "/registration/requests",
+    response_model=AdminRegistrationRequestListResponse,
+)
+def list_registration_requests_endpoint(
+    status: str | None = None,
+    _: None = Depends(require_registration_enabled),
+    __: None = Depends(require_admin_api_key),
+):
+    if status is not None and status not in {
+        "pending",
+        "approved",
+        "rejected",
+        "expired",
+    }:
+        raise HTTPException(status_code=400, detail="Invalid registration request status")
+
+    stored_requests = list_registration_requests_for_admin(status=status)
+
+    return AdminRegistrationRequestListResponse(
+        requests=[
+            _admin_registration_request_summary(stored)
+            for stored in stored_requests
+        ]
+    )
+
+
+@app.post(
+    "/registration/requests/{request_id}/approve",
+    response_model=ApproveRegistrationRequestResponse,
+)
+def approve_registration_request_endpoint(
+    request_id: str,
+    request: RegistrationRequestReviewBody,
+    _: None = Depends(require_registration_enabled),
+    __: None = Depends(require_admin_api_key),
+):
+    try:
+        stored_request, stored_agent, api_key = approve_registration_request_by_admin(
+            request_id=request_id,
+            review_notes=request.review_notes,
+        )
+    except RegistrationRequestNotFoundError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Registration request not found: {exc.args[0]}",
+        ) from exc
+    except RegistrationProofNotSubmittedError as exc:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Registration proof not submitted: {exc.args[0]}",
+        ) from exc
+    except RegistrationRequestExpiredError as exc:
+        raise HTTPException(
+            status_code=410,
+            detail=f"Registration request expired: {exc.args[0]}",
+        ) from exc
+    except RegistrationRequestNotPendingError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Registration request is not pending: {exc.args[0]}",
+        ) from exc
+    except AgentAlreadyExistsError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Agent already registered: {exc.args[0]}",
+        ) from exc
+
+    assert stored_request.reviewed_at is not None
+    assert stored_request.approved_agent_did is not None
+    return ApproveRegistrationRequestResponse(
+        request_id=stored_request.request_id,
+        status=stored_request.status,
+        agent_did=stored_agent.agent_did,
+        agent_name=stored_agent.agent_name,
+        agent_type=stored_agent.agent_type,
+        description=stored_agent.description,
+        verification_method=stored_agent.verification_method,
+        public_key=stored_agent.public_key,
+        agent_status=stored_agent.status,
+        created_at=stored_agent.created_at,
+        reviewed_at=stored_request.reviewed_at,
+        review_notes=stored_request.review_notes,
+        approved_agent_did=stored_request.approved_agent_did,
+        api_key=api_key,
+    )
+
+
+@app.post(
+    "/registration/requests/{request_id}/reject",
+    response_model=RejectRegistrationRequestResponse,
+)
+def reject_registration_request_endpoint(
+    request_id: str,
+    request: RegistrationRequestReviewBody,
+    _: None = Depends(require_registration_enabled),
+    __: None = Depends(require_admin_api_key),
+):
+    try:
+        stored = reject_registration_request_by_admin(
+            request_id=request_id,
+            review_notes=request.review_notes,
+        )
+    except RegistrationRequestNotFoundError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Registration request not found: {exc.args[0]}",
+        ) from exc
+    except RegistrationRequestNotPendingError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Registration request is not pending: {exc.args[0]}",
+        ) from exc
+
+    assert stored.reviewed_at is not None
+    assert stored.reviewed_by is not None
+    return RejectRegistrationRequestResponse(
+        request_id=stored.request_id,
+        status=stored.status,
+        agent_did=stored.agent_did,
+        reviewed_at=stored.reviewed_at,
+        reviewed_by=stored.reviewed_by,
+        review_notes=stored.review_notes,
     )
 
 

@@ -348,9 +348,9 @@ Returns `401 Unauthorized` when the admin key is missing or invalid.
 
 Returns `404 Not Found` when the agent is not registered.
 
-## Registration requests (Phase 1–2)
+## Registration requests (Phase 1–3)
 
-Self-service registration request workflow with proof-of-control. **Disabled by default.**
+Self-service registration request workflow with proof-of-control and admin approval. **Disabled by default.**
 
 Master switch: `VERIAGENT_REGISTRATION_ENABLED=false` (set to `true` to enable public routes).
 
@@ -358,7 +358,7 @@ Challenge lifetime: `VERIAGENT_REGISTRATION_CHALLENGE_TTL_MINUTES` (default `15`
 
 When disabled, all registration routes return `404 Not Found` with detail `Registration is not enabled`.
 
-Approval endpoints (`GET /registration/requests`, `POST .../approve`, `POST .../reject`) are **not implemented yet**. No agent row or API key is created until Phase 3 approval ships.
+Public create/proof/status routes require no authentication. Admin approval routes require header `X-VeriAgent-Admin-Key` (same as `POST /agents/register`). No agent row or API key is created until an operator approves a proved request.
 
 ### POST /registration/requests
 
@@ -440,5 +440,65 @@ Never returns `api_key`, `challenge_nonce`, `proof_payload`, or `public_key`.
 Returns `404 Not Found` when registration is disabled or the request does not exist.
 
 Request states: `pending` → `approved` | `rejected` | `expired` (terminal). Stale pending requests are marked `expired` via `expire_stale_requests()` on proof and status reads.
+
+### GET /registration/requests
+
+Lists registration requests for operator review. **Admin** (`X-VeriAgent-Admin-Key`).
+
+Query parameters:
+- `status` — optional filter: `pending`, `approved`, `rejected`, or `expired`. Defaults to `pending`.
+
+Returns a list of request summaries including `proof_submitted_at`, `created_at`, and `updated_at`.
+
+Never returns `challenge_nonce`, `proof_payload_json`, or `api_key`.
+
+Returns `401 Unauthorized` when the admin key is missing or invalid.
+
+Returns `400 Bad Request` for an invalid `status` filter.
+
+### POST /registration/requests/{request_id}/approve
+
+Approves a proved pending request and creates an active agent. **Admin** (`X-VeriAgent-Admin-Key`).
+
+Request body:
+- `review_notes` — optional operator notes
+
+Behavior:
+1. loads request; expires stale pending requests whose `challenge_expires_at` has passed,
+2. requires `status = pending` and `proof_submitted_at` is set,
+3. rejects expired requests,
+4. rejects when `agent_did` is already registered,
+5. creates an active agent using the same API key issuance path as `POST /agents/register`,
+6. sets `status = approved`, `reviewed_at`, `reviewed_by = admin`, `review_notes`, and `approved_agent_did`.
+
+Returns agent metadata plus raw `api_key` (`va_agent_...`) **once** in this response only. The raw key is never stored.
+
+Returns `403 Forbidden` when proof has not been submitted.
+
+Returns `404 Not Found` when the request does not exist.
+
+Returns `409 Conflict` when the request is not pending or the agent DID is already registered.
+
+Returns `410 Gone` when the request has expired.
+
+### POST /registration/requests/{request_id}/reject
+
+Rejects a pending request without creating an agent. **Admin** (`X-VeriAgent-Admin-Key`).
+
+Request body:
+- `review_notes` — optional operator notes
+
+Behavior:
+1. requires `status = pending`,
+2. sets `status = rejected`, `reviewed_at`, `reviewed_by = admin`, and `review_notes`,
+3. creates no agent row.
+
+Returns status metadata only (no `api_key`).
+
+Returns `404 Not Found` when the request does not exist.
+
+Returns `409 Conflict` when the request is not pending.
+
+One-time credential retrieval (`POST /registration/requests/{id}/credentials`) is **not implemented yet**.
 
 Design reference: [14-registration-workflow.md](14-registration-workflow.md).

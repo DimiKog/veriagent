@@ -171,9 +171,9 @@ Agent registry API tests cover:
 - `404 Not Found` for unregistered agents
 - Stored row contains SHA-256 hash of the issued API key, not the raw key
 
-## Registration request tests (Phase 1–2)
+## Registration request tests (Phase 1–3)
 
-`tests/test_registration_requests.py` covers the public registration request workflow (approval endpoints not implemented yet).
+`tests/test_registration_requests.py` covers the public registration request workflow and admin approval/rejection.
 
 Enable registration in tests via fixture:
 
@@ -193,6 +193,13 @@ Coverage includes:
 - Expired challenge returns `410 Gone` and transitions request to `status = expired`
 - `GET /registration/requests/{id}` status polling never returns `api_key`, `challenge_nonce`, or `proof_payload`
 - `expire_stale_requests()` marks overdue pending requests as `expired`
+- `GET /registration/requests` requires admin key; defaults to pending requests; excludes secrets
+- `POST /registration/requests/{id}/approve` requires admin key; creates active agent; returns raw `va_agent_...` key once
+- Approve without proof returns `403 Forbidden`
+- Approve expired request returns `410 Gone`
+- Approve duplicate DID returns `409 Conflict`
+- `POST /registration/requests/{id}/reject` requires admin key; rejects pending request without creating agent
+- Rejected request cannot be approved (`409 Conflict`)
 
 Proof signing in tests uses `canonicalize_dict()` from `app.hashing` and `sign_bytes()` from `app.signatures`, matching audit event signing.
 

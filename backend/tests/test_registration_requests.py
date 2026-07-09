@@ -13,6 +13,7 @@ from tests.support import (
     SAMPLE_VERIFICATION_METHOD,
     TEST_PRIVATE_KEY_B64,
     TEST_PUBLIC_KEY_B64,
+    admin_request_headers,
     sample_agent_register_payload,
 )
 
@@ -50,6 +51,22 @@ def post_registration_request(payload=None):
 
 def sign_proof_payload(proof_payload: dict, private_key_b64: str = TEST_PRIVATE_KEY_B64) -> str:
     return sign_bytes(private_key_b64, canonicalize_dict(proof_payload))
+
+
+def create_and_prove_registration_request(payload=None):
+    create_response = post_registration_request(payload)
+    assert create_response.status_code == 200
+    body = create_response.json()
+    proof_signature = sign_proof_payload(body["proof_payload"])
+    proof_response = client.post(
+        f"/registration/requests/{body['request_id']}/proof",
+        json={
+            "proof_signature": proof_signature,
+            "verification_method": SAMPLE_VERIFICATION_METHOD,
+        },
+    )
+    assert proof_response.status_code == 200
+    return body["request_id"], body
 
 
 def test_registration_disabled_by_default():
@@ -253,3 +270,200 @@ def test_invalid_verification_method_on_proof(registration_enabled):
 
     assert proof_response.status_code == 403
     assert "verification_method" in proof_response.json()["detail"]
+
+
+def test_list_pending_requests_requires_admin_key(registration_enabled):
+    request_id, _ = create_and_prove_registration_request()
+
+    unauthenticated = client.get("/registration/requests")
+    assert unauthenticated.status_code == 401
+
+    invalid_key = client.get(
+        "/registration/requests",
+        headers=admin_request_headers("wrong-admin-key"),
+    )
+    assert invalid_key.status_code == 401
+
+    authenticated = client.get(
+        "/registration/requests",
+        headers=admin_request_headers(),
+    )
+    assert authenticated.status_code == 200
+    body = authenticated.json()
+    assert len(body["requests"]) == 1
+    summary = body["requests"][0]
+    assert summary["request_id"] == request_id
+    assert summary["status"] == "pending"
+    assert summary["proof_submitted_at"]
+    assert summary["created_at"]
+    assert summary["updated_at"]
+    assert "challenge_nonce" not in summary
+    assert "proof_payload_json" not in summary
+    assert "api_key" not in summary
+
+
+def test_approve_requires_admin_key(registration_enabled):
+    request_id, _ = create_and_prove_registration_request()
+
+    unauthenticated = client.post(f"/registration/requests/{request_id}/approve", json={})
+    assert unauthenticated.status_code == 401
+
+    invalid_key = client.post(
+        f"/registration/requests/{request_id}/approve",
+        json={},
+        headers=admin_request_headers("wrong-admin-key"),
+    )
+    assert invalid_key.status_code == 401
+
+
+def test_reject_requires_admin_key(registration_enabled):
+    request_id, _ = create_and_prove_registration_request()
+
+    unauthenticated = client.post(f"/registration/requests/{request_id}/reject", json={})
+    assert unauthenticated.status_code == 401
+
+    invalid_key = client.post(
+        f"/registration/requests/{request_id}/reject",
+        json={},
+        headers=admin_request_headers("wrong-admin-key"),
+    )
+    assert invalid_key.status_code == 401
+
+
+def test_approve_proved_request_creates_active_agent(registration_enabled):
+    request_id, _ = create_and_prove_registration_request()
+
+    approve_response = client.post(
+        f"/registration/requests/{request_id}/approve",
+        json={"review_notes": "Approved for pilot"},
+        headers=admin_request_headers(),
+    )
+    assert approve_response.status_code == 200
+    body = approve_response.json()
+    assert body["status"] == "approved"
+    assert body["agent_status"] == "active"
+    assert body["approved_agent_did"] == SAMPLE_AGENT_DID
+    assert body["review_notes"] == "Approved for pilot"
+    assert body["reviewed_at"]
+
+    agent_response = client.get(
+        f"/agents/{SAMPLE_AGENT_DID}",
+        headers=admin_request_headers(),
+    )
+    assert agent_response.status_code == 200
+    assert agent_response.json()["status"] == "active"
+
+
+def test_approve_returns_raw_api_key_once(registration_enabled):
+    request_id, _ = create_and_prove_registration_request()
+
+    approve_response = client.post(
+        f"/registration/requests/{request_id}/approve",
+        json={},
+        headers=admin_request_headers(),
+    )
+    assert approve_response.status_code == 200
+    api_key = approve_response.json()["api_key"]
+    assert api_key.startswith("va_agent_")
+
+    status_response = client.get(f"/registration/requests/{request_id}")
+    assert status_response.status_code == 200
+    assert "api_key" not in status_response.json()
+
+
+def test_approve_without_proof_fails(registration_enabled):
+    create_response = post_registration_request()
+    assert create_response.status_code == 200
+    request_id = create_response.json()["request_id"]
+
+    approve_response = client.post(
+        f"/registration/requests/{request_id}/approve",
+        json={},
+        headers=admin_request_headers(),
+    )
+    assert approve_response.status_code == 403
+    assert "proof not submitted" in approve_response.json()["detail"].lower()
+
+
+def test_approve_expired_request_fails(registration_enabled, isolated_db):
+    request_id, _ = create_and_prove_registration_request()
+
+    db_path = resolve_db_path(isolated_db)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            UPDATE registration_requests
+            SET challenge_expires_at = '2020-01-01T00:00:00+00:00'
+            WHERE request_id = ?
+            """,
+            (request_id,),
+        )
+        conn.commit()
+
+    approve_response = client.post(
+        f"/registration/requests/{request_id}/approve",
+        json={},
+        headers=admin_request_headers(),
+    )
+    assert approve_response.status_code == 410
+    assert "expired" in approve_response.json()["detail"].lower()
+
+
+def test_approve_duplicate_did_fails(registration_enabled):
+    request_id, _ = create_and_prove_registration_request()
+
+    admin_response = client.post(
+        "/agents/register",
+        json=sample_agent_register_payload(),
+        headers=admin_request_headers(),
+    )
+    assert admin_response.status_code == 200
+
+    approve_response = client.post(
+        f"/registration/requests/{request_id}/approve",
+        json={},
+        headers=admin_request_headers(),
+    )
+    assert approve_response.status_code == 409
+    assert "already registered" in approve_response.json()["detail"].lower()
+
+
+def test_reject_pending_request_works(registration_enabled):
+    request_id, _ = create_and_prove_registration_request()
+
+    reject_response = client.post(
+        f"/registration/requests/{request_id}/reject",
+        json={"review_notes": "Not eligible for pilot"},
+        headers=admin_request_headers(),
+    )
+    assert reject_response.status_code == 200
+    body = reject_response.json()
+    assert body["status"] == "rejected"
+    assert body["reviewed_by"] == "admin"
+    assert body["review_notes"] == "Not eligible for pilot"
+    assert body["reviewed_at"]
+
+    agent_response = client.get(
+        f"/agents/{SAMPLE_AGENT_DID}",
+        headers=admin_request_headers(),
+    )
+    assert agent_response.status_code == 404
+
+
+def test_rejected_request_cannot_be_approved(registration_enabled):
+    request_id, _ = create_and_prove_registration_request()
+
+    reject_response = client.post(
+        f"/registration/requests/{request_id}/reject",
+        json={},
+        headers=admin_request_headers(),
+    )
+    assert reject_response.status_code == 200
+
+    approve_response = client.post(
+        f"/registration/requests/{request_id}/approve",
+        json={},
+        headers=admin_request_headers(),
+    )
+    assert approve_response.status_code == 409
+    assert "not pending" in approve_response.json()["detail"].lower()

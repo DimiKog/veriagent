@@ -7,18 +7,25 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 from app.hashing import canonicalize_dict
+from app.auth import generate_agent_api_key, hash_agent_api_key
 from app.signatures import validate_ed25519_did_key_agent, verify_signature
 from app.storage import (
     AgentAlreadyExistsError,
     DuplicatePendingRegistrationError,
+    RegistrationProofNotSubmittedError,
+    RegistrationRequestExpiredError,
     RegistrationRequestNotFoundError,
     RegistrationRequestNotPendingError,
+    StoredAgent,
     StoredRegistrationRequest,
+    approve_registration_request,
     create_registration_request,
     expire_stale_requests,
     get_agent,
     get_registration_request,
+    list_registration_requests,
     mark_registration_request_expired,
+    reject_registration_request,
     submit_registration_proof,
 )
 
@@ -215,6 +222,50 @@ def get_registration_request_status(
         raise RegistrationRequestNotFoundError(request_id)
 
     return stored
+
+
+def list_registration_requests_for_admin(
+    status: str | None = None,
+) -> list[StoredRegistrationRequest]:
+    if not is_registration_enabled():
+        raise RegistrationDisabledError()
+
+    expire_stale_requests()
+    return list_registration_requests(status=status)
+
+
+def approve_registration_request_by_admin(
+    request_id: str,
+    review_notes: str | None = None,
+) -> tuple[StoredRegistrationRequest, StoredAgent, str]:
+    if not is_registration_enabled():
+        raise RegistrationDisabledError()
+
+    expire_stale_requests()
+
+    api_key = generate_agent_api_key()
+    api_key_hash = hash_agent_api_key(api_key)
+    stored_request, stored_agent = approve_registration_request(
+        request_id=request_id,
+        api_key_hash=api_key_hash,
+        reviewed_by="admin",
+        review_notes=review_notes,
+    )
+    return stored_request, stored_agent, api_key
+
+
+def reject_registration_request_by_admin(
+    request_id: str,
+    review_notes: str | None = None,
+) -> StoredRegistrationRequest:
+    if not is_registration_enabled():
+        raise RegistrationDisabledError()
+
+    return reject_registration_request(
+        request_id=request_id,
+        reviewed_by="admin",
+        review_notes=review_notes,
+    )
 
 
 def hmac_compare(left: str, right: str) -> bool:

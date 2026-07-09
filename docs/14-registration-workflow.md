@@ -1,6 +1,6 @@
 # VeriAgent Registration Request & Approval Workflow (Design)
 
-**Status:** Design only — not implemented.  
+**Status:** Phase 1–3 implemented (public request/proof/status + admin approval); credential retrieval and demo mode not implemented.  
 **Target release context:** Post v1.0-RC1; aligns with [13-commercial-readiness-roadmap.md](13-commercial-readiness-roadmap.md) Phase 1 (pilot-ready) and [09-demo-mode.md](09-demo-mode.md) §7 (future production onboarding).
 
 This document designs a **registration request and approval workflow** that lets agent operators apply for production access without sharing the global admin key, while preserving VeriAgent's existing cryptographic binding model (Ed25519 `did:key`, per-agent API keys, signature verification at ingestion).
@@ -592,12 +592,13 @@ Phases 1–4 and 6 are sequential for the registration workflow. **Phase 5 (demo
 - Rate limiting on public routes.
 - **Exit criteria:** Applicant can complete proof via curl; no agent row until approval.
 
-### Phase 3 — Admin approval API
+### Phase 3 — Admin approval API (implemented)
 
-- Implement `GET /registration/requests`, `POST .../approve`, `POST .../reject`, optional `POST .../credentials`.
-- Approval calls existing `register_agent()`; returns one-time `api_key` in admin response only (optional `retrieval_token` for applicant self-fetch).
+- `GET /registration/requests`, `POST .../approve`, `POST .../reject` behind `VERIAGENT_REGISTRATION_ENABLED` with admin key auth.
+- Approval calls existing `register_agent()` atomically; returns one-time `api_key` in admin response only.
 - `GET .../{id}` returns status only — never `api_key`.
-- Background job or scheduler hook to mark `expired` requests.
+- `expire_stale_requests()` marks overdue pending requests on proof, status, and admin reads.
+- **Not yet:** optional `POST .../credentials` for applicant self-fetch via retrieval token.
 - **Exit criteria:** Operator can approve proved request without using direct `/agents/register`; pilot onboarding doc validated.
 
 ### Phase 4 — SDK and operator tooling
