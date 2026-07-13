@@ -104,6 +104,7 @@ def test_post_anchor_stores_record_when_anchoring_succeeds(monkeypatch):
     body = response.json()
     assert body["already_anchored"] is False
     assert body["batch_id"] == batch["batch_id"]
+    assert body["merkle_root"] == batch["merkle_root"]
     assert body["anchor_address"] == ANCHOR_CONTRACT
     assert body["tx_hash"] == FAKE_TX_HASH
     assert body["block_number"] == FAKE_BLOCK_NUMBER
@@ -168,6 +169,7 @@ def test_get_anchor_returns_stored_record_after_anchoring(monkeypatch):
     assert get_response.status_code == 200
     stored = get_response.json()
     posted = post_response.json()
+    assert stored["merkle_root"] == batch["merkle_root"]
     assert stored["anchored_at"] == FAKE_CHAIN_TIMESTAMP
     assert stored["anchored_by"] == ANCHOR_SENDER
     assert stored == {

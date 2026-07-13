@@ -98,6 +98,11 @@ def test_public_read_and_verify_endpoints_still_work_without_agent_key():
     assert get_response.status_code == 200
     assert get_response.json()["event_id"] == "event-public-read"
 
+    status_response = client.get("/audit/events/event-public-read/status")
+    assert status_response.status_code == 200
+    assert status_response.json()["event_id"] == "event-public-read"
+    assert status_response.json()["batched"] is False
+
     verify_response = client.post("/audit/verify", json=payload)
     assert verify_response.status_code == 200
     assert verify_response.json()["verified"] is True

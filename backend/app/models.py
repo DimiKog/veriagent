@@ -51,6 +51,21 @@ class StoredEventResponse(BaseModel):
     signature_algorithm: str | None = None
 
 
+class EventLifecycleStatusResponse(BaseModel):
+    event_id: str
+    event_hash: str
+    created_at: str
+    batched: bool
+    batch_id: str | None = None
+    merkle_root: str | None = None
+    anchored: bool
+    tx_hash: str | None = None
+    block_number: int | None = None
+    chain_id: int | None = None
+    anchored_at: int | None = None
+    anchored_by: str | None = None
+
+
 class VerifyResponse(BaseModel):
     event_id: str
     verified: bool
@@ -95,6 +110,7 @@ class BatchProofResponse(BaseModel):
 
 class BatchAnchorRecord(BaseModel):
     batch_id: str
+    merkle_root: str
     anchor_address: str
     tx_hash: str
     block_number: int

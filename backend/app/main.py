@@ -21,6 +21,7 @@ from app.models import (
     BatchAnchorRecord,
     BatchProofResponse,
     BatchResponse,
+    EventLifecycleStatusResponse,
     IngestionReceipt,
     MerkleProofStep,
     MerkleVerifyRequest,
@@ -80,6 +81,7 @@ from app.storage import (
     get_batch,
     get_batch_anchor,
     get_batch_event,
+    get_event_lifecycle_status,
     init_db,
     register_agent,
     store_audit_event,
@@ -194,9 +196,14 @@ def _admin_registration_request_summary(
     )
 
 
-def _batch_anchor_record(anchor: StoredBatchAnchor) -> BatchAnchorRecord:
+def _batch_anchor_record(
+    anchor: StoredBatchAnchor,
+    *,
+    merkle_root: str,
+) -> BatchAnchorRecord:
     return BatchAnchorRecord(
         batch_id=anchor.batch_id,
+        merkle_root=merkle_root,
         anchor_address=anchor.anchor_address,
         tx_hash=anchor.tx_hash,
         block_number=anchor.block_number,
@@ -299,6 +306,28 @@ def get_stored_event(event_id: str):
     )
 
 
+@app.get("/audit/events/{event_id}/status", response_model=EventLifecycleStatusResponse)
+def get_event_lifecycle_status_endpoint(event_id: str):
+    status = get_event_lifecycle_status(event_id)
+    if status is None:
+        raise HTTPException(status_code=404, detail=f"Event not found: {event_id}")
+
+    return EventLifecycleStatusResponse(
+        event_id=status.event_id,
+        event_hash=status.event_hash,
+        created_at=status.created_at,
+        batched=status.batched,
+        batch_id=status.batch_id,
+        merkle_root=status.merkle_root,
+        anchored=status.anchored,
+        tx_hash=status.tx_hash,
+        block_number=status.block_number,
+        chain_id=status.chain_id,
+        anchored_at=status.anchored_at,
+        anchored_by=status.anchored_by,
+    )
+
+
 @app.post("/audit/verify", response_model=VerifyResponse)
 def verify_event(event: AuditEvent):
     stored = get_audit_event(event.event_id)
@@ -385,8 +414,18 @@ def anchor_batch_on_chain(batch_id: str, _: None = Depends(require_admin_api_key
             detail=f"Anchor transaction failed: {exc}",
         ) from exc
 
-    record = _batch_anchor_record(result.anchor)
+    record = _batch_anchor_record(
+        result.anchor,
+        merkle_root=_merkle_root_for_anchor_batch(batch_id),
+    )
     return AnchorBatchResponse(**record.model_dump(), already_anchored=result.already_anchored)
+
+
+def _merkle_root_for_anchor_batch(batch_id: str) -> str:
+    batch = get_batch(batch_id)
+    if batch is None:
+        raise HTTPException(status_code=404, detail=f"Batch not found: {batch_id}")
+    return batch.merkle_root
 
 
 @app.get("/audit/batches/{batch_id}/anchor", response_model=BatchAnchorRecord)
@@ -398,7 +437,10 @@ def get_batch_anchor_record(batch_id: str):
             detail=f"Anchor record not found for batch: {batch_id}",
         )
 
-    return _batch_anchor_record(anchor)
+    return _batch_anchor_record(
+        anchor,
+        merkle_root=_merkle_root_for_anchor_batch(batch_id),
+    )
 
 
 @app.get("/audit/batches/{batch_id}", response_model=BatchResponse)

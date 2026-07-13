@@ -54,7 +54,7 @@ These support **technical due diligence** and **pilot scoping** even before prod
 | **PostgreSQL migration** | Concurrent writers, managed backups, path to HA — when usage justifies it |
 | **Offsite encrypted backups** | Disaster recovery beyond single-VM retention |
 | **Monitoring and alerting** | Proactive notice on `anchor_failed`, API health, disk, scheduler stalls |
-| **Independent verifier CLI** | Third-party audit without trusting API responses for verification logic |
+| **Independent verifier CLI** | **Implemented** — `veriagent verify` in `sdk/python` (offline hash + Merkle + anchor metadata) |
 | **Organization dashboard** | Per-org agents, events, batches, anchors — not a single global operator view |
 
 **Near-term pilot workaround:** One dedicated VeriAgent instance per pilot customer (self-hosted or managed single-tenant), operator-mediated agent registration, manual ops monitoring via `/ops/status`.
@@ -71,7 +71,7 @@ These support **technical due diligence** and **pilot scoping** even before prod
 | --- | --- |
 | Registration request workflow | Applicants submit org + DID; operator approves; API key issued |
 | Proof-of-control challenge | Nonce signed by applicant before approval |
-| Independent verifier CLI | Local verify: hash, Merkle proof, on-chain root |
+| Independent verifier CLI | **Implemented** — `veriagent verify` offline; local hash, Merkle proof, anchor metadata |
 | Demo mode (`POST /demo/agents`) | Safe public sandbox without admin keys ([09-demo-mode.md](09-demo-mode.md)) |
 | Monitoring basics | Health + ops status alerts; anchor failure notifications |
 | Offsite backup policy | Encrypted copies; restore runbook tested |
@@ -156,7 +156,7 @@ Anchoring can remain on **customer-operated Besu**, a **consortium chain**, or e
 Ordered for **pilot value** and **honest scope**:
 
 1. **Registration request workflow** — Removes global admin key sharing; unlocks partner self-service with approval.
-2. **Independent verifier CLI** — Critical for third-party trust and paper reproducibility.
+2. **Independent verifier CLI** — **Implemented** (`docs/15-independent-verifier.md`). Optional follow-up: on-chain `getBatch` RPC check.
 3. **Multi-tenant organization model** — Required before shared hosted offering.
 4. **PostgreSQL migration** — **Only after real usage** demonstrates SQLite limits (concurrency, backup ops, multi-tenant queries).
 5. **Monitoring and alerting** — Low effort, high ops value for any pilot.

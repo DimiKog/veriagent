@@ -147,6 +147,28 @@ Does not return the raw event signature or agent public keys.
 
 Missing events return `404 Not Found`.
 
+## GET /audit/events/{event_id}/status
+
+Returns the batch and anchoring lifecycle state for a stored audit event. **Public** (no authentication).
+
+Does **not** expose secrets (no API keys, private keys, admin key, receipt secret, registration data, canonical event JSON, or signatures).
+
+Returns:
+- `event_id`
+- `event_hash`
+- `created_at`
+- `batched` — `true` when the event is included in a Merkle batch
+- `batch_id` — `null` when unbatched
+- `merkle_root` — `null` when unbatched
+- `anchored` — `true` when the event's batch has an on-chain anchor record
+- `tx_hash` — `null` when not anchored
+- `block_number` — `null` when not anchored
+- `chain_id` — `null` when not anchored
+- `anchored_at` — Unix timestamp; `null` when not anchored
+- `anchored_by` — on-chain sender address; `null` when not anchored
+
+Missing events return `404 Not Found`.
+
 ## POST /audit/verify
 
 Verifies a submitted audit event against the stored commitment.
@@ -226,6 +248,7 @@ Requires anchoring environment variables (see [05-deployment.md](05-deployment.m
 
 Returns:
 - `batch_id`
+- `merkle_root` — local batch Merkle root anchored on-chain
 - `anchor_address` — deployed `VeriAgentAnchor` contract address
 - `tx_hash`
 - `block_number`
@@ -267,7 +290,7 @@ Requires the same Besu anchoring environment variables as manual anchoring (see 
 
 ## GET /audit/batches/{batch_id}/anchor
 
-Returns the SQLite anchor record for a batch.
+Returns the SQLite anchor record for a batch, including `merkle_root` from the local batch record.
 
 Returns `404 Not Found` when no local anchor record exists (anchoring has not been performed or recorded yet).
 

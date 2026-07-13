@@ -126,6 +126,22 @@ class StoredBatchAnchor:
     chain_id: int
 
 
+@dataclass(frozen=True)
+class StoredEventLifecycleStatus:
+    event_id: str
+    event_hash: str
+    created_at: str
+    batched: bool
+    batch_id: str | None
+    merkle_root: str | None
+    anchored: bool
+    tx_hash: str | None
+    block_number: int | None
+    chain_id: int | None
+    anchored_at: int | None
+    anchored_by: str | None
+
+
 def resolve_db_path(db_path: Path | str | None = None) -> Path:
     if db_path is not None:
         return Path(db_path)
@@ -367,6 +383,55 @@ def get_audit_event(
         return None
 
     return _stored_audit_event_from_row(row)
+
+
+def get_event_lifecycle_status(
+    event_id: str,
+    db_path: Path | str | None = None,
+) -> StoredEventLifecycleStatus | None:
+    init_db(db_path)
+    with _connect(db_path) as conn:
+        row = conn.execute(
+            """
+            SELECT
+                e.event_id,
+                e.event_hash,
+                e.created_at,
+                be.batch_id,
+                b.merkle_root,
+                ba.tx_hash,
+                ba.block_number,
+                ba.chain_id,
+                ba.anchored_at,
+                ba.anchored_by
+            FROM audit_events e
+            LEFT JOIN batch_events be ON e.event_id = be.event_id
+            LEFT JOIN audit_batches b ON be.batch_id = b.batch_id
+            LEFT JOIN batch_anchors ba ON b.batch_id = ba.batch_id
+            WHERE e.event_id = ?
+            """,
+            (event_id,),
+        ).fetchone()
+
+    if row is None:
+        return None
+
+    batch_id = row["batch_id"]
+    tx_hash = row["tx_hash"]
+    return StoredEventLifecycleStatus(
+        event_id=row["event_id"],
+        event_hash=row["event_hash"],
+        created_at=row["created_at"],
+        batched=batch_id is not None,
+        batch_id=batch_id,
+        merkle_root=row["merkle_root"],
+        anchored=tx_hash is not None,
+        tx_hash=tx_hash,
+        block_number=row["block_number"],
+        chain_id=row["chain_id"],
+        anchored_at=row["anchored_at"],
+        anchored_by=row["anchored_by"],
+    )
 
 
 def list_unbatched_events(db_path: Path | str | None = None) -> list[StoredAuditEvent]:

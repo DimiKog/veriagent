@@ -52,6 +52,7 @@ python -m pytest -v
 | `tests/test_merkle.py` | Merkle root, inclusion proof generation, and verification |
 | `tests/test_batches.py` | Batch creation, retrieval, proof API, and Merkle verify API |
 | `tests/test_api.py` | FastAPI endpoints including receipt responses |
+| `tests/test_event_status_api.py` | Public `GET /audit/events/{event_id}/status` lifecycle lookup and secret exclusion |
 | `tests/test_anchoring.py` | On-chain anchor helpers (batch id, metadata hash, ABI loading, config) |
 | `tests/test_batch_anchor_api.py` | Batch anchor API with monkeypatched web3 calls (no Anvil required) |
 | `tests/test_auto_anchor_scheduler.py` | Automatic batch/anchor scheduler cycle (no events, threshold, anchor failure) |
@@ -83,6 +84,16 @@ Receipt unit tests cover:
 - Development fallback secret when `VERIAGENT_RECEIPT_SECRET` is unset
 
 API tests assert that `POST /audit/events` returns a verifiable receipt and that `GET /audit/events/{event_id}` still returns stored metadata including `canonical_event_json`, `verification_method`, and `signature_algorithm`.
+
+## Event lifecycle status tests
+
+`tests/test_event_status_api.py` covers:
+
+- `404` for unknown `event_id`
+- Unbatched stored events (`batched=false`, batch and anchor fields `null`)
+- Batched but unanchored events (`batched=true`, `anchored=false`, `batch_id` and `merkle_root` set)
+- Anchored events (full anchor metadata present)
+- Response excludes secrets, signatures, canonical JSON, and registration fields
 
 ## Merkle batch tests
 

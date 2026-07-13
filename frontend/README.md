@@ -115,6 +115,7 @@ Public workflow steps:
 2. **Agent credentials** — enter the registered **Agent DID**, **Agent API Key** (`va_agent_…`), and **Agent Private Key** (base64 Ed25519 seed, demo mode). Click **Use agent credentials** to derive the public key, verify the DID matches, and compute `verification_method`.
 3. **Create signed audit event** — build an unsigned event, canonicalize and sign it in the browser, then submit with `X-VeriAgent-API-Key`. On success the UI explains that batch creation and anchoring are operator-controlled.
 4. **Verify/read existing batch/proof/anchor evidence** — read-only lookups when you have identifiers from the operator workflow:
+   - **Event lifecycle status** — `GET /audit/events/{event_id}/status` (discover `batch_id` and anchoring state from `event_id` alone)
    - **Lookup batch** — `GET /audit/batches/{batch_id}`
    - **Get & verify proof** — `GET .../proof/{event_id}` then `POST /audit/merkle/verify`
    - **Get anchor record** — `GET /audit/batches/{batch_id}/anchor`
