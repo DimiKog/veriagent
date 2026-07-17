@@ -13,3 +13,34 @@ scripts/demo_agent.env
 contracts/out/
 contracts/cache/
 contracts/broadcast/
+
+# Generated agent credentials and first-run artifacts (never commit).
+# Prefer storing these under ~/.veriagent/ (see docs/17-first-run-guide.md).
+agent.key
+agent.api_key
+*.api_key
+*.priv.b64
+**/agent.key
+**/agent.api_key
+**/agent.priv.b64
+sdk/python/agent.key
+sdk/python/*.key
+sdk/python/*.api_key
+sdk/python/*.priv.b64
+sdk/python/agent.identity.env
+sdk/python/agent.*.env
+sdk/python/registration.json
+sdk/python/approve.json
+sdk/python/submit*.json
+sdk/python/lifecycle.json
+sdk/python/stored_event_meta.json
+sdk/python/request_id.txt
+sdk/python/event_id.txt
+sdk/python/event.json
+sdk/python/event-*.json
+sdk/python/proof.json
+sdk/python/anchor.json
+
+# Frontend build output (also listed in frontend/.gitignore).
+frontend/dist/
+frontend/node_modules/

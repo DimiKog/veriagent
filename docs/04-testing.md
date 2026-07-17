@@ -12,7 +12,7 @@ source .venv/bin/activate
 python -m pytest
 ```
 
-### Frontend (v0.9.3+)
+### Frontend
 
 From `frontend/`:
 
@@ -21,7 +21,7 @@ npm run build   # TypeScript check + production bundle
 npm run lint
 ```
 
-Browser signing utilities live under `frontend/src/utils/` (`didKey.ts`, `canonicalize.ts`, `signEvent.ts`, `credentials.ts`). JCS output should match backend `jcs.canonicalize` for the same unsigned event object.
+Agent signing and JCS canonicalization for production flows live in the Python SDK (`sdk/python/`). The SPA does not ship browser crypto helpers for agent identity.
 
 ### Python SDK (v0.9.4+)
 
@@ -308,31 +308,29 @@ export VERIAGENT_RECEIPT_SECRET="replace-with-a-long-random-secret"
 export VERIAGENT_ADMIN_API_KEY="replace-with-a-long-random-admin-key"
 ```
 
-## Production end-to-end check (v0.9.3)
+## Production end-to-end check
 
-Full trust-chain validation requires **signed** event ingestion. Options: the [Python SDK](../sdk/python/README.md) (`VeriAgentClient`), the dashboard browser demo (step 2 credentials + step 3), [manual API checks](#manual-api-checks), or `scripts/sign_demo_event.py`.
+Full trust-chain validation requires **signed** event ingestion via the [Python SDK/CLI](../sdk/python/README.md) (`VeriAgentClient` / `veriagent submit`), [manual API checks](#manual-api-checks), or `scripts/sign_demo_event.py`. See also [17-first-run-guide.md](17-first-run-guide.md).
 
 ### Signed ingestion + chain validation
 
-1. Register an agent via `POST /agents/register` with `X-VeriAgent-Admin-Key`; save `api_key`, `agent_did`, `verification_method`, and `public_key`.
+1. Register an agent via the public registration workflow (`veriagent register request|prove|claim`) or `POST /agents/register` with `X-VeriAgent-Admin-Key`; save `api_key`, `agent_did`, `verification_method`, and keep the private key offline.
 2. Submit a signed event with the [Python SDK](../sdk/python/README.md) or build a signed body with `python scripts/sign_demo_event.py` (set `VERIAGENT_DEMO_PRIVATE_KEY` to reuse the same agent identity across runs).
 3. `POST /audit/events` with `X-VeriAgent-API-Key` and the signed payload; confirm `receipt.signature` verifies.
-4. `POST /audit/batches` — note `batch_id` and `merkle_root` (requires `X-VeriAgent-Admin-Key`).
+4. `POST /audit/batches` — note `batch_id` and `merkle_root` (requires `X-VeriAgent-Admin-Key`), or wait for auto-anchor when enabled.
 5. `GET /audit/batches/{batch_id}/proof/{event_id}` — confirm proof verifies via `POST /audit/merkle/verify`.
-6. `POST /audit/batches/{batch_id}/anchor` — requires admin key and Besu anchoring env on the API host (`VERIAGENT_CHAIN_ID=424242` for Besu Edu-Net); confirm `tx_hash`.
+6. Confirm anchoring — admin `POST /audit/batches/{batch_id}/anchor` or scheduler; requires Besu anchoring env on the API host (`VERIAGENT_CHAIN_ID=424242` for Besu Edu-Net); confirm `tx_hash`.
 7. Open `https://blockexplorer.dimikog.org/tx/{tx_hash}` and confirm the anchor transaction on chain `424242`.
 
-### Dashboard end-to-end check
+### Dashboard / Console end-to-end check
 
-With the [public dashboard](https://dimikog.github.io/veriagent/) and API at `https://veriagent.dimikog.org`:
+With the [public SPA](https://dimikog.github.io/veriagent/) and API at `https://veriagent.dimikog.org` (or local first-run):
 
-1. **API health check** — expect a healthy response with API version `0.9.3`.
-2. **Agent credentials** — enter registered Agent DID, `va_agent_...` API key, and base64 Ed25519 private key (demo mode); click **Use agent credentials** and confirm **Ready**.
-3. **Create signed audit event** — submit a signed event from the browser; confirm `event_id` and `event_hash` in the workflow sidebar.
-4. **Create Merkle batch** — confirm `batch_id` and `merkle_root`.
-5. **Retrieve Merkle proof** — confirm verification succeeds in the status panel.
-6. **Anchor batch** — requires production backend Besu anchoring env vars (`VERIAGENT_CHAIN_ID=424242`); confirm `tx_hash` in the sidebar.
-7. **Show anchor result** — confirm stored anchor metadata matches step 6.
-8. After anchoring, open **View on Blockscout** (links to `https://blockexplorer.dimikog.org/tx/{hash}`).
+1. **API health check** — expect a healthy response with API version `1.0.0-rc.1`.
+2. **Register** — submit public identity on `/register`; prove and claim with the CLI (never paste private keys into the browser).
+3. **Submit** — `veriagent submit` (or SDK); unlock **Console** with the agent API key to list events.
+4. **Lifecycle** — observe Submitted → Batched → Anchored on Console or Dashboard.
+5. **Evidence** — lookup batch, Merkle proof verify, anchor record + Blockscout link.
+6. **Independent verify** — optional `veriagent verify` with event/proof/anchor JSON.
 
 Local dashboard dev: [frontend/README.md](../frontend/README.md).

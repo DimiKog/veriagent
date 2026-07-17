@@ -2,7 +2,7 @@
 
 **Release:** v1.0.0-RC1  
 **Status:** Stable research-grade release candidate  
-**Backend API version:** `1.0-pre` (target stable tag: `v1.0.0`)  
+**Shared version string:** `1.0.0-rc.1` (backend `/health`, Python SDK, frontend badge; target stable tag: `v1.0.0`)  
 **Date:** June 2026
 
 **Related:** [10-v1-release-checklist.md](10-v1-release-checklist.md) · [08-architecture.md](08-architecture.md) · [13-commercial-readiness-roadmap.md](13-commercial-readiness-roadmap.md)
@@ -19,7 +19,7 @@ VeriAgent does **not** prove that an agent's claimed action occurred in the phys
 
 ## What changed since early versions
 
-Early releases established hashing, SQLite storage, and Merkle batching. Subsequent phases added agent registry, ingestion authentication, Ed25519 event signatures, real `did:key` identities, browser demo signing, admin-protected batch/anchor operations, the Python SDK, SQLite backup/restore tooling, and finally **automatic batching and anchoring** with public ops visibility.
+Early releases established hashing, SQLite storage, and Merkle batching. Subsequent phases added agent registry, ingestion authentication, Ed25519 event signatures, real `did:key` identities, an experimental browser demo-signing path (later removed from production SPA), admin-protected batch/anchor operations, the Python SDK/CLI, SQLite backup/restore tooling, and finally **automatic batching and anchoring** with public ops visibility.
 
 | Era | Highlights |
 | --- | --- |
@@ -49,9 +49,11 @@ The v1.0.0-RC1 candidate consolidates these into one deployable, publicly demons
 | **Besu anchoring** | `VeriAgentAnchor` contract; `anchorBatch` with batch ID, root, count, metadata hash |
 | **Automatic batching and anchoring** | FastAPI lifespan scheduler; configurable interval and minimum event threshold |
 | **`GET /ops/status`** | Public scheduler config and last-cycle metadata (no secrets) |
-| **Browser signing dashboard** | In-browser Ed25519 + JCS for demo workflows; keys in memory only |
-| **Python Agent SDK** | `sdk/python/` — identity, signing, `POST /audit/events` |
+| **Python Agent SDK / CLI** | `sdk/python/` — identity, registration prove/claim, signing, submit, offline verify |
+| **SPA surfaces** | Dashboard / Register / Console / Admin — browser never holds agent private keys |
 | **SQLite backup/restore** | `scripts/backup_sqlite.sh`, `scripts/restore_sqlite.sh`; operator guide |
+
+> **Note (post-RC1):** Early RC1-era builds included an experimental in-browser demo signing path. Current production architecture removes that path; see [16-production-architecture.md](16-production-architecture.md) and [17-first-run-guide.md](17-first-run-guide.md).
 
 **Public read endpoints** (no auth): event retrieval, verify, batch metadata, Merkle proof, anchor record, `POST /audit/hash`, `POST /audit/merkle/verify`, `/health`, `/ops/status`.
 
@@ -89,7 +91,7 @@ VeriAgent v1.0.0-RC1 is a **research prototype** with explicit trust boundaries.
 
 **Does not mitigate:** missing or false submissions; operator modification of SQLite before anchoring; stolen API keys or compromised signing keys; legal or regulatory compliance claims.
 
-The frontend never holds admin keys, anchor private keys, or receipt secrets. Demo agent private keys live in browser memory only.
+The frontend never holds admin keys, anchor private keys, receipt secrets, or **agent private keys**. Signing runs in the Python SDK/CLI.
 
 ---
 

@@ -1,6 +1,6 @@
 # VeriAgent Independent Verifier CLI
 
-**Status:** Implemented in `sdk/python` (v0.9.5+).
+**Status:** Implemented in `sdk/python` (v1.0.0-rc.1).
 
 The independent verifier lets third parties validate VeriAgent audit evidence **without trusting the VeriAgent API** for cryptographic checks. Verification runs entirely from local JSON files using the same rules as the backend:
 

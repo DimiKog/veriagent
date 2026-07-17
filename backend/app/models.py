@@ -204,6 +204,12 @@ class RegistrationRequestStatusResponse(BaseModel):
     proof_submitted_at: str | None = None
     reviewed_at: str | None = None
     credentials_available: bool = False
+    # True once the applicant has claimed the one-time API key (Path B).
+    credentials_claimed: bool = False
+    # ISO timestamp from credentials_retrieved_at when claimed; None otherwise.
+    credentials_claimed_at: str | None = None
+    # Returned only while pending and awaiting proof (enables CLI prove with request-id alone).
+    proof_payload: RegistrationProofPayload | None = None
 
 
 class RegistrationRequestReviewBody(BaseModel):
@@ -250,7 +256,34 @@ class ApproveRegistrationRequestResponse(BaseModel):
     reviewed_at: str
     review_notes: str | None = None
     approved_agent_did: str
+    # One-time token for optional claim header auth. The agent API key is NEVER
+    # returned here — only via POST .../credentials after a fresh ownership proof.
+    retrieval_token: str
+
+
+class ClaimRegistrationCredentialsRequest(BaseModel):
+    proof_signature: str
+    verification_method: str
+
+
+class ClaimRegistrationCredentialsResponse(BaseModel):
+    request_id: str
+    agent_did: str
     api_key: str
+    agent_status: str
+    verification_method: str
+
+
+class AgentAuditEventSummary(BaseModel):
+    event_id: str
+    event_hash: str
+    created_at: str
+    batched: bool = False
+    anchored: bool = False
+
+
+class AgentAuditEventListResponse(BaseModel):
+    events: list[AgentAuditEventSummary]
 
 
 class RejectRegistrationRequestResponse(BaseModel):

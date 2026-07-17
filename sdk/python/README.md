@@ -1,6 +1,8 @@
-# VeriAgent Python SDK (v0.9.4)
+# VeriAgent Python SDK (v1.0.0-rc.1)
 
 Minimal Python client for external agents to submit Ed25519-signed audit events to a VeriAgent API without hand-rolling canonicalization, signing, or auth headers.
+
+Also includes a CLI for public registration (`veriagent register …`), event submit (`veriagent submit`), and an **independent verifier** (`veriagent verify`). See [docs/15-independent-verifier.md](../../docs/15-independent-verifier.md).
 
 The SDK handles:
 
@@ -9,8 +11,7 @@ The SDK handles:
 - RFC 8785 / JCS canonicalization of the unsigned audit event
 - Ed25519 signing over the canonical bytes
 - `POST /audit/events` with `X-VeriAgent-API-Key`
-
-Admin agent registration is **not** included in this SDK yet. Register agents manually via `POST /agents/register` (admin key required).
+- Public registration helpers: create request, prove ownership, claim credentials
 
 ## Install
 
@@ -66,31 +67,40 @@ source scripts/demo_agent.env
 python scripts/sign_demo_event.py
 ```
 
-## Register the agent manually
+## Public registration (CLI)
 
-Registration requires the VeriAgent admin API key (`X-VeriAgent-Admin-Key`). The SDK does not wrap this yet.
+When `VERIAGENT_REGISTRATION_ENABLED` is on, create a request, prove key ownership, wait for admin approval, then claim the agent API key:
 
 ```bash
-curl -sS -X POST "$VERIAGENT_API_BASE/agents/register" \
-  -H "Content-Type: application/json" \
-  -H "X-VeriAgent-Admin-Key: $VERIAGENT_ADMIN_API_KEY" \
-  -d '{
-    "agent_did": "did:key:z6MkezV7YRFqjB8RH46omrmEyUDC6NfVsu38sPKbs2MqUQHN",
-    "agent_name": "Demo Python Agent",
-    "agent_type": "llm-agent",
-    "description": "SDK demo agent",
-    "verification_method": "did:key:z6MkezV7YRFqjB8RH46omrmEyUDC6NfVsu38sPKbs2MqUQHN#z6MkezV7YRFqjB8RH46omrmEyUDC6NfVsu38sPKbs2MqUQHN",
-    "public_key": "B//IAHvaxhD+ChlhwU5fapc8DSLPN1yjmIWmXJTwOOk="
-  }'
+# Private key via --private-key-file, --private-key, or VERIAGENT_PRIVATE_KEY
+veriagent register request \
+  --api-base-url "$VERIAGENT_API_BASE" \
+  --private-key-file ./agent.key \
+  --agent-name "Demo Python Agent" \
+  --agent-type "llm-agent" \
+  --organization-name "Acme" \
+  --contact-email "ops@example.com" \
+  --use-case-summary "Pilot audit trail" \
+  --output ./registration.json
+
+veriagent register prove \
+  --request-id <request_id> \
+  --api-base-url "$VERIAGENT_API_BASE" \
+  --private-key-file ./agent.key
+
+# After approval:
+veriagent register claim \
+  --request-id <request_id> \
+  --api-base-url "$VERIAGENT_API_BASE" \
+  --private-key-file ./agent.key \
+  --output-key-file ./agent.api_key
 ```
 
-Save the returned `api_key` (`va_agent_...`). You need:
+`register prove` fetches `proof_payload` from `GET /registration/requests/{id}` while the request is still pending and awaiting proof (or accept `--proof-payload` from the create response).
 
-1. The **private key** (held only by the agent)
-2. The **agent API key** (sent on each `POST /audit/events`)
-3. Matching `agent_did`, `public_key`, and `verification_method` in the registry
+Python helpers: `create_registration_request`, `submit_registration_proof`, `claim_registration_credentials`.
 
-See [docs/03-api.md](../../docs/03-api.md) for full registration and signing rules.
+Admin `POST /agents/register` remains available for operators; see [docs/03-api.md](../../docs/03-api.md).
 
 ## Submit signed events from Python
 
@@ -125,6 +135,16 @@ print(response["receipt"])
 
 If `timestamp` is omitted, the SDK uses the current UTC ISO timestamp (matching backend JSON datetime encoding).
 
+Or via CLI (event JSON and/or field flags):
+
+```bash
+veriagent submit \
+  --api-base-url "$VERIAGENT_API_BASE" \
+  --api-key "$VERIAGENT_API_KEY" \
+  --private-key-file ./agent.key \
+  --event ./event.json
+```
+
 ### Signing boundary
 
 The signature covers the RFC 8785 / JCS canonical JSON of the audit event **excluding** `signature` and `verification_method`. The backend Python `jcs` package remains the verification source of truth; this SDK uses the same `jcs` library.
@@ -137,7 +157,28 @@ source .venv/bin/activate
 python -m pytest -v
 ```
 
-Tests cover DID derivation, signing, canonicalization stability (cross-checked against the backend hasher), signed payload construction, and mocked HTTP submission with `X-VeriAgent-API-Key`.
+Tests cover DID derivation, signing, canonicalization stability (cross-checked against the backend hasher), signed payload construction, mocked HTTP submission with `X-VeriAgent-API-Key`, and offline verifier bundles (`tests/test_verifier.py`).
+
+## Independent verifier CLI
+
+After `pip install -e ".[dev]"`:
+
+```bash
+veriagent verify --event event.json --proof proof.json --anchor anchor.json
+veriagent verify --event event.json --proof proof.json --anchor anchor.json --json
+```
+
+Optional public API fetch (verification still runs locally):
+
+```bash
+veriagent verify \
+  --event event.json \
+  --api-base-url https://veriagent.dimikog.org \
+  --batch-id <uuid> \
+  --event-id <event_id>
+```
+
+Full evidence bundle format and exit codes: [docs/15-independent-verifier.md](../../docs/15-independent-verifier.md).
 
 ## Package layout
 
@@ -145,10 +186,15 @@ Tests cover DID derivation, signing, canonicalization stability (cross-checked a
 sdk/python/
   pyproject.toml
   README.md
+  veriagent_cli.py
   veriagent/
     __init__.py
     client.py
+    hashing.py
     identity.py
+    merkle.py
+    registration.py
     signing.py
+    verifier.py
   tests/
 ```

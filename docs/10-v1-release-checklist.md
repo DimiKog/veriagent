@@ -1,10 +1,10 @@
 # VeriAgent v1.0-RC1 Release Checklist
 
-**Release candidate:** v1.0-RC1  
-**Backend API version:** `1.0-pre` (target stable tag: `v1.0.0`)  
+**Release candidate:** v1.0.0-rc.1  
+**Shared version string:** `1.0.0-rc.1` (backend, Python SDK, frontend; target stable tag: `v1.0.0`)  
 **Repository state:** `master` clean and aligned with `origin/master` (verified 2026-06-18)
 
-This document is the operator and release gate for promoting VeriAgent from `1.0-pre` to a stable **v1.0.0** tag. It consolidates capabilities, deployment status, security boundaries, environment requirements, and demo/paper readiness in one place.
+This document is the operator and release gate for promoting VeriAgent from `1.0.0-rc.1` to a stable **v1.0.0** tag. It consolidates capabilities, deployment status, security boundaries, environment requirements, and demo/paper readiness in one place.
 
 **Related docs:** [08-architecture.md](08-architecture.md) · [05-deployment.md](05-deployment.md) · [06-threat-model.md](06-threat-model.md) · [07-backup-restore.md](07-backup-restore.md) · [09-demo-mode.md](09-demo-mode.md)
 
@@ -51,9 +51,10 @@ VeriAgent v1.0-RC1 delivers an end-to-end **verifiable audit commitment pipeline
 | Item | Status | Notes |
 | --- | --- | --- |
 | **Backend VM** | Deployed | FastAPI + Nginx + systemd at `https://veriagent.dimikog.org` |
-| **API version** | `1.0-pre` | `/health` returns `"version": "1.0-pre"` |
+| **API version** | `1.0.0-rc.1` | `/health` returns `"version": "1.0.0-rc.1"` |
 | **Frontend (Pages)** | Deployed | https://dimikog.github.io/veriagent/ via `gh-pages` workflow |
-| **Dashboard UI badge** | `v0.9.6` | Static badge in frontend; does not reflect backend `1.0-pre` — cosmetic only |
+| **Dashboard UI badge** | `v1.0.0-rc.1` | Aligned with backend and SDK |
+| **Python SDK** | `1.0.0-rc.1` | `sdk/python` package / `__version__` |
 | **Besu contract** | Deployed + verified | Blockscout verification complete |
 | **CORS** | Configured | Allowlist includes `https://dimikog.github.io` |
 | **Auto-anchor on VM** | **Enabled** | `auto_anchor_enabled: true`, `scheduler_running: true` (checked 2026-06-18) |
@@ -65,7 +66,7 @@ VeriAgent v1.0-RC1 delivers an end-to-end **verifiable audit commitment pipeline
 
 ```json
 {
-  "version": "1.0-pre",
+  "version": "1.0.0-rc.1",
   "auto_anchor_enabled": true,
   "interval_seconds": 300,
   "min_events": 5,
@@ -164,7 +165,7 @@ When auto-anchor is enabled, the same Besu anchoring variables as manual anchori
 | --- | --- |
 | `VERIAGENT_DEMO_PRIVATE_KEY` | In `scripts/demo_agent.env` (gitignored) for `sign_demo_event.py` and SDK examples |
 
-Store all production secrets in a gitignored `.env` on the VM or a secrets manager. Never commit `.env`, keys, or `backend/data/veriagent.db`.
+Store all production secrets in a gitignored `backend/.env` on the VM (loaded automatically on API startup) and/or systemd `EnvironmentFile`. Process env overrides `.env`. Never commit `.env`, keys, or `backend/data/veriagent.db`. See [05-deployment.md](05-deployment.md#how-configuration-is-loaded-local-and-production).
 
 ---
 
@@ -240,7 +241,7 @@ curl -s https://veriagent.dimikog.org/ops/status | jq .
 ### Product / UX gaps
 
 - **Agent onboarding friction** — demo users need operator-prepared credentials or admin `POST /agents/register`; no one-click demo agent.
-- **Dashboard vs backend version mismatch** — UI badge `v0.9.6`; API `1.0-pre`; health step shows live API version.
+- **Version alignment** — backend, SDK, and frontend badge all report `1.0.0-rc.1`; health step shows live API version.
 - **Dashboard batch/anchor UX** — public UI does **not** create batches or submit anchors (admin-protected since v0.9.6). Users inspect evidence via read-only lookup (batch ID, proof, anchor record). Auto-anchor is server-side only; dashboard does not poll `/ops/status` yet.
 - **Python SDK scope** — event submission only; no admin registration, async client, or TypeScript SDK.
 
@@ -262,8 +263,8 @@ Complete these gates before creating git tag **`v1.0.0`** (and optionally **`v1.
 - [ ] `cd backend && python -m pytest` — full suite green
 - [ ] `cd frontend && npm run build && npm run lint` — pass
 - [ ] `cd sdk/python && python -m pytest -v` — pass
-- [ ] Bump `API_VERSION` in `backend/app/main.py` from `1.0-pre` to `1.0.0` (or keep `1.0.0` for stable tag only)
-- [ ] Align README, deployment guide, and dashboard badge with stable version strings
+- [ ] Bump shared version from `1.0.0-rc.1` to `1.0.0` in `backend/app/main.py`, `sdk/python/`, and `frontend/package.json` / UI badge
+- [ ] Align README, deployment guide, and docs with stable version strings
 
 ### Production VM
 
@@ -305,24 +306,23 @@ Use this for live demos, stakeholder walkthroughs, and pre-presentation rehearsa
 - [ ] API healthy: https://veriagent.dimikog.org/health
 - [ ] Ops status sane: https://veriagent.dimikog.org/ops/status (`scheduler_running`, no stale `last_error`)
 - [ ] Dashboard loads: https://dimikog.github.io/veriagent/ (hard refresh or private window)
-- [ ] **Agent credentials prepared** — operator registers agent via admin API **before** the session:
+- [ ] **Agent credentials prepared** — register via public workflow or admin API **before** the session:
   - Agent DID (`did:key:z...`)
-  - `va_agent_...` API key (shown once at registration)
-  - Base64 Ed25519 private key matching the DID (demo key only — not production secrets)
+  - `va_agent_...` API key (from `veriagent register claim` or admin register)
+  - Private key file kept on the agent host for CLI submit (never paste into the browser)
 - [ ] Know current `min_events` (production: **5**) — plan to submit enough events for auto-anchor within ~5 minutes, or pre-seed unbatched events
 - [ ] Blockscout and contract links ready for the “on-chain proof” moment
 
-### During the demo (dashboard flow)
+### During the demo (SPA + CLI flow)
 
 | Step | Action | Expected result |
 | --- | --- | --- |
 | 1 | **Check health** | `veriagent` healthy; API version displayed |
-| 2 | **Agent credentials** | Paste DID, API key, private key → **Use agent credentials** → **Ready** |
-| 3 | **Create signed audit event** | Unique `event_id`; submit → `event_id`, `event_hash`, receipt in sidebar |
+| 2 | **Submit via CLI/SDK** | `veriagent submit` with API key + private key file → `event_id`, `event_hash`, receipt |
 | 3× | **Repeat if needed** | Submit until unbatched count ≥ `min_events` for auto-anchor |
-| 4 | **Wait / poll ops** | `curl /ops/status` or explain scheduler interval (~5 min) |
-| 5 | **Evidence lookup** | Enter `batch_id` from ops or operator → **Lookup batch** |
-| 6 | **Merkle proof** | Enter `batch_id` + `event_id` → proof retrieved; verify success |
+| 4 | **Wait / poll ops** | `/ops/status` or explain scheduler interval (~5 min) |
+| 5 | **Evidence lookup** | Dashboard/Console: enter `event_id` / `batch_id` → **Lookup batch** |
+| 6 | **Merkle proof** | Proof retrieved; verify success |
 | 7 | **Anchor record** | **Get anchor record** → `tx_hash` in sidebar |
 | 8 | **Blockscout** | **View on Blockscout** → tx visible on Besu Edu-Net |
 
@@ -360,7 +360,7 @@ Use this for live demos, stakeholder walkthroughs, and pre-presentation rehearsa
 - Do **not** claim the system proves agents **told the truth** — only that a registered key signed a payload and it was committed.
 - Do **not** claim immutability **before** anchoring — SQLite is operator-controlled until the batch root is on chain.
 - Do **not** claim decentralized trust — the backend operator and Besu Edu-Net governance are trusted in this prototype.
-- Qualify **demo browser signing** as evaluation-only; production agents should use the Python SDK or server-side signing.
+- Emphasize that the **browser never holds agent private keys**; production agents use the Python SDK/CLI for prove, claim, and submit.
 
 ### Suggested demo narrative (5–10 minutes)
 

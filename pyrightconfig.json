@@ -1,6 +1,12 @@
 {
-  "include": ["backend/app", "backend/tests"],
-  "exclude": ["backend/.venv", "contracts", "**/__pycache__"],
+  "include": [
+    "backend/app",
+    "backend/tests",
+    "sdk/python/veriagent",
+    "sdk/python/tests"
+  ],
+  "exclude": ["backend/.venv", "sdk/python/.venv", "contracts", "**/__pycache__"],
+  "extraPaths": ["sdk/python"],
   "venvPath": "backend",
   "venv": ".venv",
   "stubPath": "backend/typings",

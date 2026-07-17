@@ -39,6 +39,14 @@ class RegistrationRequestExpiredError(Exception):
     pass
 
 
+class RegistrationCredentialsAlreadyClaimedError(Exception):
+    pass
+
+
+class RegistrationCredentialsNotAvailableError(Exception):
+    pass
+
+
 class NoUnbatchedEventsError(Exception):
     pass
 
@@ -108,11 +116,21 @@ class StoredRegistrationRequest:
     approved_agent_did: str | None
     retrieval_token_hash: str | None
     credentials_retrieved_at: str | None
+    pending_api_key: str | None
     client_ip_hash: str | None
     created_at: str
     updated_at: str
     public_key: str
     verification_method: str
+
+
+@dataclass(frozen=True)
+class StoredAgentEventSummary:
+    event_id: str
+    event_hash: str
+    created_at: str
+    batched: bool
+    anchored: bool
 
 
 @dataclass(frozen=True)
@@ -169,6 +187,17 @@ def _migrate_audit_events_table(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE audit_events ADD COLUMN verification_method TEXT")
     if "signature_algorithm" not in columns:
         conn.execute("ALTER TABLE audit_events ADD COLUMN signature_algorithm TEXT")
+
+
+def _migrate_registration_requests_table(conn: sqlite3.Connection) -> None:
+    columns = {
+        row[1]
+        for row in conn.execute("PRAGMA table_info(registration_requests)").fetchall()
+    }
+    if "pending_api_key" not in columns:
+        conn.execute(
+            "ALTER TABLE registration_requests ADD COLUMN pending_api_key TEXT"
+        )
 
 
 def init_db(db_path: Path | str | None = None) -> None:
@@ -264,6 +293,7 @@ def init_db(db_path: Path | str | None = None) -> None:
                 approved_agent_did TEXT,
                 retrieval_token_hash TEXT,
                 credentials_retrieved_at TEXT,
+                pending_api_key TEXT,
                 client_ip_hash TEXT,
                 public_key TEXT NOT NULL,
                 verification_method TEXT NOT NULL,
@@ -273,6 +303,7 @@ def init_db(db_path: Path | str | None = None) -> None:
             )
             """
         )
+        _migrate_registration_requests_table(conn)
         conn.execute(
             """
             CREATE INDEX IF NOT EXISTS idx_registration_requests_status
@@ -455,6 +486,44 @@ def list_unbatched_events(db_path: Path | str | None = None) -> list[StoredAudit
         ).fetchall()
 
     return [_stored_audit_event_from_row(row) for row in rows]
+
+
+def list_audit_events_for_agent(
+    agent_did: str,
+    limit: int = 50,
+    offset: int = 0,
+    db_path: Path | str | None = None,
+) -> list[StoredAgentEventSummary]:
+    init_db(db_path)
+    with _connect(db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT
+                e.event_id,
+                e.event_hash,
+                e.created_at,
+                be.batch_id,
+                ba.tx_hash
+            FROM audit_events e
+            LEFT JOIN batch_events be ON e.event_id = be.event_id
+            LEFT JOIN batch_anchors ba ON be.batch_id = ba.batch_id
+            WHERE json_extract(e.canonical_event_json, '$.agent_id') = ?
+            ORDER BY e.created_at DESC, e.event_id DESC
+            LIMIT ? OFFSET ?
+            """,
+            (agent_did, limit, offset),
+        ).fetchall()
+
+    return [
+        StoredAgentEventSummary(
+            event_id=row["event_id"],
+            event_hash=row["event_hash"],
+            created_at=row["created_at"],
+            batched=row["batch_id"] is not None,
+            anchored=row["tx_hash"] is not None,
+        )
+        for row in rows
+    ]
 
 
 def create_batch_from_unbatched(db_path: Path | str | None = None) -> StoredBatch:
@@ -760,6 +829,7 @@ def _stored_registration_request_from_row(row: sqlite3.Row) -> StoredRegistratio
         approved_agent_did=row["approved_agent_did"],
         retrieval_token_hash=row["retrieval_token_hash"],
         credentials_retrieved_at=row["credentials_retrieved_at"],
+        pending_api_key=row["pending_api_key"],
         client_ip_hash=row["client_ip_hash"],
         public_key=row["public_key"],
         verification_method=row["verification_method"],
@@ -868,6 +938,7 @@ def get_registration_request(
                 approved_agent_did,
                 retrieval_token_hash,
                 credentials_retrieved_at,
+                pending_api_key,
                 client_ip_hash,
                 public_key,
                 verification_method,
@@ -1001,6 +1072,7 @@ def list_registration_requests(
                 approved_agent_did,
                 retrieval_token_hash,
                 credentials_retrieved_at,
+                pending_api_key,
                 client_ip_hash,
                 public_key,
                 verification_method,
@@ -1021,6 +1093,8 @@ def approve_registration_request(
     api_key_hash: str,
     reviewed_by: str,
     review_notes: str | None = None,
+    retrieval_token_hash: str | None = None,
+    pending_api_key: str | None = None,
     db_path: Path | str | None = None,
 ) -> tuple[StoredRegistrationRequest, StoredAgent]:
     init_db(db_path)
@@ -1052,6 +1126,7 @@ def approve_registration_request(
                     approved_agent_did,
                     retrieval_token_hash,
                     credentials_retrieved_at,
+                    pending_api_key,
                     client_ip_hash,
                     public_key,
                     verification_method,
@@ -1126,6 +1201,8 @@ def approve_registration_request(
                     reviewed_at = ?,
                     review_notes = ?,
                     approved_agent_did = ?,
+                    retrieval_token_hash = ?,
+                    pending_api_key = ?,
                     updated_at = ?
                 WHERE request_id = ?
                   AND status = 'pending'
@@ -1135,6 +1212,8 @@ def approve_registration_request(
                     now,
                     review_notes,
                     stored.agent_did,
+                    retrieval_token_hash,
+                    pending_api_key,
                     now,
                     request_id,
                 ),
@@ -1163,6 +1242,94 @@ def approve_registration_request(
     assert updated is not None
     assert agent is not None
     return updated, agent
+
+
+def consume_registration_pending_api_key(
+    request_id: str,
+    db_path: Path | str | None = None,
+) -> tuple[StoredRegistrationRequest, str]:
+    init_db(db_path)
+    now = datetime.now(timezone.utc).isoformat()
+    with _connect(db_path) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            row = conn.execute(
+                """
+                SELECT
+                    request_id,
+                    agent_did,
+                    agent_name,
+                    agent_type,
+                    description,
+                    organization_name,
+                    contact_email,
+                    use_case_summary,
+                    status,
+                    challenge_nonce,
+                    challenge_expires_at,
+                    proof_signature,
+                    proof_submitted_at,
+                    proof_payload_json,
+                    reviewed_by,
+                    reviewed_at,
+                    review_notes,
+                    approved_agent_did,
+                    retrieval_token_hash,
+                    credentials_retrieved_at,
+                    pending_api_key,
+                    client_ip_hash,
+                    public_key,
+                    verification_method,
+                    created_at,
+                    updated_at
+                FROM registration_requests
+                WHERE request_id = ?
+                """,
+                (request_id,),
+            ).fetchone()
+            if row is None:
+                raise RegistrationRequestNotFoundError(request_id)
+
+            stored = _stored_registration_request_from_row(row)
+            if stored.status != "approved":
+                raise RegistrationCredentialsNotAvailableError(request_id)
+            if stored.credentials_retrieved_at is not None:
+                raise RegistrationCredentialsAlreadyClaimedError(request_id)
+            if stored.pending_api_key is None:
+                raise RegistrationCredentialsNotAvailableError(request_id)
+
+            api_key = stored.pending_api_key
+            update_cursor = conn.execute(
+                """
+                UPDATE registration_requests
+                SET pending_api_key = NULL,
+                    credentials_retrieved_at = ?,
+                    retrieval_token_hash = NULL,
+                    updated_at = ?
+                WHERE request_id = ?
+                  AND status = 'approved'
+                  AND credentials_retrieved_at IS NULL
+                  AND pending_api_key IS NOT NULL
+                """,
+                (now, now, request_id),
+            )
+            if update_cursor.rowcount == 0:
+                raise RegistrationCredentialsAlreadyClaimedError(request_id)
+            conn.commit()
+        except (
+            RegistrationRequestNotFoundError,
+            RegistrationCredentialsAlreadyClaimedError,
+            RegistrationCredentialsNotAvailableError,
+        ):
+            conn.rollback()
+            raise
+        except Exception:
+            conn.rollback()
+            raise
+
+    updated = get_registration_request(request_id, db_path=db_path)
+    assert updated is not None
+    return updated, api_key
 
 
 def reject_registration_request(

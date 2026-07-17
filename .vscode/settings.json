@@ -1,4 +1,7 @@
 {
   "python.defaultInterpreterPath": "${workspaceFolder}/backend/.venv/bin/python",
-  "python.analysis.extraPaths": ["backend"]
+  "python.analysis.extraPaths": [
+    "backend",
+    "sdk/python"
+  ]
 }

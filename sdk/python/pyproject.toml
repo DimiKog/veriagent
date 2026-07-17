@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "veriagent"
-version = "0.9.4"
-description = "Minimal Python SDK for submitting signed VeriAgent audit events"
+version = "1.0.0-rc.1"
+description = "Python SDK and offline verifier for VeriAgent audit evidence"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -15,10 +15,16 @@ dependencies = [
     "jcs>=0.2.1",
 ]
 
+[project.scripts]
+veriagent = "veriagent_cli:main"
+
 [project.optional-dependencies]
 dev = [
     "pytest>=9.0.0",
 ]
+
+[tool.setuptools]
+py-modules = ["veriagent_cli"]
 
 [tool.setuptools.packages.find]
 where = ["."]

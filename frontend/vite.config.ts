@@ -6,12 +6,12 @@ export default defineConfig({
   base: '/veriagent/',
   plugins: [react()],
   server: {
-    // Same-origin proxy for local dev — avoids browser CORS against the remote API.
+    // Optional same-origin proxy when VITE_API_BASE_URL=/veriagent-api.
+    // Default client.ts points at http://127.0.0.1:8000 directly (CORS allows Vite origins).
     proxy: {
       '/veriagent-api': {
-        target: 'https://veriagent.dimikog.org',
+        target: 'http://127.0.0.1:8000',
         changeOrigin: true,
-        secure: true,
         rewrite: (path) => path.replace(/^\/veriagent-api/, ''),
       },
     },

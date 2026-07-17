@@ -1,21 +1,24 @@
 # Deployment Guide
 
-VeriAgent is developed locally first. This guide documents what is deployed today (public demo **v0.9.3**), how each component is published, and how to validate or troubleshoot releases.
+VeriAgent is developed locally first. This guide documents what is deployed today (public API **`1.0.0-rc.1`**), how each component is published, and how to validate or troubleshoot releases.
 
-## Public demo (v0.9.3)
+## Public demo
 
 | Component | URL | Notes |
 |-----------|-----|--------|
-| Dashboard | https://dimikog.github.io/veriagent/ | GitHub Pages; Vite `base` is `/veriagent/` |
+| SPA | https://dimikog.github.io/veriagent/ | GitHub Pages; Vite `base` is `/veriagent/` (Dashboard / Register / Console / Admin) |
 | API | https://veriagent.dimikog.org | FastAPI behind Nginx on a Linux VM |
 | API docs | https://veriagent.dimikog.org/docs | Swagger UI at `/docs` (not `/api/docs`) |
-| Health | https://veriagent.dimikog.org/health | Returns `version: "0.9.3"` |
+| Health | https://veriagent.dimikog.org/health | Returns `version: "1.0.0-rc.1"` |
+| Ops status | https://veriagent.dimikog.org/ops/status | Scheduler configuration and last-run metadata |
 | Block explorer | https://blockexplorer.dimikog.org/ | Blockscout; contract and txs verified on Besu Edu-Net |
 | Besu RPC (operator) | https://rpc.dimikog.org/rpc/ | Used by Foundry deploy and backend anchoring |
 
 **Contract (Besu Edu-Net):** `0x30546417E83A0C96bf87BEdfEe59De8FBdf1187A` — deployment tx and history in [docs/02-devlog.md](02-devlog.md).
 
 Anchoring from the **production** API requires `VERIAGENT_*` anchoring env vars on the VM. Treat on-chain anchoring as production-ready only after you have validated that configuration end to end.
+
+Architecture surfaces: [16-production-architecture.md](16-production-architecture.md). First-run walkthrough: [17-first-run-guide.md](17-first-run-guide.md).
 
 ## Deployment topology
 
@@ -28,6 +31,9 @@ Browser
    |
    +-- https://blockexplorer.dimikog.org/tx/{hash}  (explorer links from dashboard only)
 
+Agent host (SDK / CLI)
+   +-- veriagent register prove|claim · submit · verify  (private keys stay here)
+
 Linux VM
    +-- Nginx TLS --> uvicorn (FastAPI)
    +-- SQLite (backend/data/ or VERIAGENT_DB_PATH)
@@ -37,21 +43,21 @@ Besu Edu-Net (chain ID 424242)
    +-- VeriAgentAnchor @ 0x30546417E83A0C96bf87BEdfEe59De8FBdf1187A
 ```
 
-## What shipped in v0.9.3
+## Current production surfaces
 
-Summary of deployment-relevant work (detail in [docs/02-devlog.md](02-devlog.md)):
+Deployment-relevant capabilities (detail in [docs/02-devlog.md](02-devlog.md) and [16-production-architecture.md](16-production-architecture.md)):
 
-- **End-to-end verifiable audit chain** — registered agent → signed event → HMAC receipt → Merkle batch → proof → Besu anchor; validated on Besu chain `424242`.
-- **Agent registry** — admin-protected `POST /agents/register`; per-agent API keys for ingestion.
-- **Signed audit events** — Ed25519 signatures required on `POST /audit/events`; public verify/read endpoints unchanged.
-- **Public dashboard** — Vite + React workflow UI; **browser-side Ed25519 signing** for demo audit events (step 2 credentials + step 3); batch, proof, and anchor steps unchanged.
+- **End-to-end verifiable audit chain** — registered agent → signed event → HMAC receipt → Merkle batch → proof → Besu anchor.
+- **Agent registry** — break-glass `POST /agents/register` plus public registration workflow (request / proof / admin approve / credential claim).
+- **Signed audit events** — Ed25519 signatures required on `POST /audit/events`; signing via Python SDK/CLI only.
+- **SPA** — Dashboard (read-only), Register, Console, Admin; **no browser agent private keys**.
+- **Auto batch/anchor** — optional in-process scheduler; monitor via `GET /ops/status`.
 - **CORS** — FastAPI allowlist for `https://dimikog.github.io` and local Vite origins.
-- **Block explorer links** — `BLOCKSCOUT_TX_BASE` in `frontend/src/api/client.ts`; **View on Blockscout** when `tx_hash` is set.
-- **API version** — `/health` and OpenAPI metadata report `0.9.3` (matches dashboard header badge).
+- **Block explorer links** — `BLOCKSCOUT_TX_BASE` in `frontend/src/api/client.ts`.
+- **API version** — `/health` and OpenAPI metadata report `1.0.0-rc.1` (same string as the Python SDK and frontend badge).
 - **GitHub Pages pipeline** — `.github/workflows/deploy-frontend.yml` publishes `frontend/dist/` to **`gh-pages`**.
-- **Documentation** — Root README, this guide, [docs/04-testing.md](04-testing.md), [frontend/README.md](../frontend/README.md).
 
-The frontend **never** holds admin keys, wallet private keys, or anchor signing secrets. Anchoring is server-side only. The dashboard accepts a **demo agent private key** in memory only (not persisted) to sign audit events in the browser; production agents should sign via the **Python SDK** (`sdk/python/`), `scripts/sign_demo_event.py`, or direct API integration.
+The frontend **never** holds agent private keys, admin keys, wallet private keys, or anchor signing secrets. Anchoring is server-side only. Production agents sign via the **Python SDK/CLI** (`sdk/python/`).
 
 ---
 
@@ -78,6 +84,20 @@ Optional example Nginx site config: [`deploy/nginx-veriagent-api.conf.example`](
 | `VERIAGENT_ANCHOR_CONTRACT_ADDRESS` | Deployed `VeriAgentAnchor` (Besu: `0x30546417E83A0C96bf87BEdfEe59De8FBdf1187A`) |
 | `VERIAGENT_ANCHOR_PRIVATE_KEY` | Owner key for `anchorBatch` — **never commit** |
 
+See `backend/.env.example` for the full template (registration and auto-anchor flags included).
+
+### How configuration is loaded (local and production)
+
+Local and production use the **same** rules:
+
+1. On startup, FastAPI loads `backend/.env` if that file exists (`python-dotenv`, `override=False`).
+2. Variables **already set in the process environment** (shell `export`, systemd `Environment=` / `EnvironmentFile=`, container env) **win** over values in `.env`.
+3. Missing optional vars keep code defaults (for example auto-anchor off, registration off).
+
+**Local:** `cp backend/.env.example backend/.env`, edit secrets, then `uvicorn app.main:app --reload` from `backend/` (working directory does not matter for the path — the app resolves `.env` relative to the `backend/` package root).
+
+**Production:** Prefer a gitignored `backend/.env` on the VM **or** systemd `EnvironmentFile=` pointing at the same variables. Either works; do not commit secrets. Restart the API process after changing env so the lifespan/scheduler picks up new values.
+
 | Variable | Purpose |
 |----------|---------|
 | `VERIAGENT_DB_PATH` | Optional SQLite file path |
@@ -100,9 +120,9 @@ Check `scheduler_running`, `last_status`, `last_batch_id`, and `last_anchor_tx` 
 
 ### Demo mode (design only)
 
-A safer public onboarding flow (browser-generated keys, `POST /demo/agents`, short-lived demo agents) is documented in [09-demo-mode.md](09-demo-mode.md). **Not implemented yet.** The proposed master switch `VERIAGENT_DEMO_MODE_ENABLED` defaults to `false` and must remain off on production until backend and frontend phases ship. Until then, demo users register agents via admin `POST /agents/register` or operator-prepared credentials (see dashboard E2E steps below).
+A safer public one-click onboarding flow is documented in [09-demo-mode.md](09-demo-mode.md). **Not implemented yet.** Until then, use the production registration workflow (Register page + CLI prove/claim) or break-glass admin `POST /agents/register`. See [17-first-run-guide.md](17-first-run-guide.md).
 
-Store secrets in a gitignored `.env` on the host or your secrets manager.
+Store secrets in a gitignored `backend/.env` on the host (loaded automatically on startup when present) or your secrets manager / systemd `EnvironmentFile`. Exported process environment variables take precedence over `.env`.
 
 ### Deploy or update the backend on the VM
 
@@ -116,7 +136,7 @@ Store secrets in a gitignored `.env` on the host or your secrets manager.
 curl -s https://veriagent.dimikog.org/health | jq .
 ```
 
-Expected includes `"version": "0.9.3"`. If you still see `0.9.0` or older, the running process was not restarted after the version bump.
+Expected includes `"version": "1.0.0-rc.1"`. If you still see an older version, the running process was not restarted after the version bump.
 
 6. Verify CORS for the dashboard (see [CORS](#cors-browser-frontend) below).
 
@@ -176,7 +196,7 @@ Use **either** FastAPI CORS **or** nginx CORS from the example config — not bo
 | 4 | `peaceiris/actions-gh-pages` pushes **`frontend/dist/`** to the **`gh-pages`** branch |
 | 5 | GitHub Pages serves the site from **`gh-pages`** at the repo root |
 
-**Important:** Committing `frontend/dist/` on `master` does **not** update the live site unless Pages is incorrectly pointed at `master`. The live dashboard is whatever is on **`gh-pages`** after a successful workflow run.
+**Important:** `frontend/dist/` is **not** kept on `master`. CI runs `npm run build` and publishes the fresh `frontend/dist/` output to the **`gh-pages`** branch. Committing build artifacts on `master` does **not** update the live site.
 
 ### One-time GitHub repository setup
 
@@ -222,7 +242,7 @@ Override with `VITE_API_BASE_URL` if needed. More detail: [frontend/README.md](.
 |---------|----------------|---------------|
 | Old layout / `v0.5.0` badge | Pages not serving latest `gh-pages` | **Settings → Pages** source = `gh-pages` / `(root)` |
 | `index.html` references old `assets/index-*.js` | Stale Pages deployment or failed workflow | **Actions** workflow status; compare live page source vs `gh-pages` branch |
-| Changes only on `master` in `frontend/dist/` | Dist on `master` is not the Pages source | Wait for workflow or fix Pages source |
+| Changes only on `master` in `frontend/dist/` | Dist is not source-controlled on `master`; Pages serves `gh-pages` | Wait for workflow or fix Pages source |
 | API still `0.5.0` on health | Backend not restarted | VM restart after pull (see [Backend](#backend-production-vm)) |
 | CORS errors in browser console | CORS not deployed on API | CORS tests + VM restart |
 
@@ -230,18 +250,18 @@ Live check — page source should load JS/CSS under `/veriagent/assets/` that ex
 
 ### Dashboard end-to-end (production)
 
-Use https://dimikog.github.io/veriagent/ in order:
+Use https://dimikog.github.io/veriagent/ (and the CLI/SDK for signing):
 
-1. **API health check** — expect healthy status and API `0.9.3`.
-2. **Agent credentials** — registered Agent DID, `va_agent_...` API key, and base64 demo private key; click **Use agent credentials**.
-3. **Create signed audit event** — browser signs and stores the event; confirm `event_id` / `event_hash`.
-4. **Create Merkle batch** — `batch_id` / `merkle_root`.
+1. **API health check** — expect healthy status and API `1.0.0-rc.1`.
+2. **Register / claim** — public Register page + `veriagent register prove|claim` (private keys stay on the agent host).
+3. **Submit signed audit event** — `veriagent submit` or Python SDK; confirm `event_id` / `event_hash`.
+4. **Observe lifecycle** — Console or Dashboard: Submitted → Batched → Anchored (scheduler or admin batch/anchor).
 5. **Retrieve Merkle proof** — verification success in status panel.
-6. **Anchor batch** — requires production anchoring env on VM (`VERIAGENT_CHAIN_ID=424242`); then `tx_hash` in sidebar.
-7. **Show anchor result** — stored anchor metadata.
-8. **View on Blockscout** — opens `https://blockexplorer.dimikog.org/tx/{hash}`.
+6. **Anchor record** — `tx_hash` in sidebar when anchored (`VERIAGENT_CHAIN_ID=424242` on the API host).
+7. **View on Blockscout** — opens `https://blockexplorer.dimikog.org/tx/{hash}`.
+8. **Optional independent verify** — `veriagent verify`.
 
-Full signed-ingestion and API-level steps: [docs/04-testing.md](04-testing.md).
+Full signed-ingestion and API-level steps: [docs/04-testing.md](04-testing.md). First-run walkthrough: [docs/17-first-run-guide.md](17-first-run-guide.md).
 
 ---
 
@@ -387,7 +407,7 @@ External agents can submit signed events without implementing JCS or HTTP auth h
 
 The SDK derives `agent_did` and `verification_method` from a base64 Ed25519 private key, canonicalizes the unsigned event with Python `jcs`, signs, and POSTs to `/audit/events` with `X-VeriAgent-API-Key`. Admin agent registration is **not** included yet — register agents via `POST /agents/register` on the API host first.
 
-Demo private key for local testing: `scripts/demo_agent.env` (`VERIAGENT_DEMO_PRIVATE_KEY`).
+Demo private key for local **CLI/SDK** testing: `scripts/demo_agent.env` (`VERIAGENT_DEMO_PRIVATE_KEY`). Never paste into the SPA.
 
 ---
 

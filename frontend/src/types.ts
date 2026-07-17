@@ -37,6 +37,22 @@ export interface StoreEventResponse {
   receipt: IngestionReceipt
 }
 
+/** Response from GET /audit/events/{event_id}/status */
+export interface EventLifecycleStatusResponse {
+  event_id: string
+  event_hash: string
+  created_at: string
+  batched: boolean
+  batch_id: string | null
+  merkle_root: string | null
+  anchored: boolean
+  tx_hash: string | null
+  block_number: number | null
+  chain_id: number | null
+  anchored_at: number | null
+  anchored_by: string | null
+}
+
 export interface BatchResponse {
   batch_id: string
   merkle_root: string
@@ -66,6 +82,7 @@ export interface MerkleVerifyResponse {
 
 export interface BatchAnchorRecord {
   batch_id: string
+  merkle_root: string
   anchor_address: string
   tx_hash: string
   block_number: number
@@ -85,6 +102,8 @@ export interface WorkflowState {
   merkle_root: string
   tx_hash: string
   chain_id: string
+  block_number: string
+  anchored_at: string
 }
 
 export const emptyWorkflowState = (): WorkflowState => ({
@@ -94,4 +113,156 @@ export const emptyWorkflowState = (): WorkflowState => ({
   merkle_root: '',
   tx_hash: '',
   chain_id: '',
+  block_number: '',
+  anchored_at: '',
 })
+
+/* ── Registration ─────────────────────────────────────── */
+
+export interface CreateRegistrationRequest {
+  agent_did: string
+  agent_name: string
+  agent_type: string
+  description?: string | null
+  verification_method: string
+  public_key: string
+  organization_name: string
+  contact_email: string
+  use_case_summary: string
+}
+
+export interface RegistrationProofPayload {
+  purpose: string
+  request_id: string
+  agent_did: string
+  nonce: string
+  issued_at: string
+  expires_at: string
+}
+
+export interface CreateRegistrationRequestResponse {
+  request_id: string
+  agent_did: string
+  challenge_nonce: string
+  challenge_expires_at: string
+  proof_payload: RegistrationProofPayload
+}
+
+export interface RegistrationRequestStatusResponse {
+  request_id: string
+  status: string
+  agent_did: string
+  created_at: string
+  challenge_expires_at: string | null
+  proof_submitted_at: string | null
+  reviewed_at: string | null
+  credentials_available: boolean
+  credentials_claimed: boolean
+  credentials_claimed_at: string | null
+  proof_payload: RegistrationProofPayload | null
+}
+
+export interface AdminRegistrationRequestSummary {
+  request_id: string
+  agent_did: string
+  agent_name: string
+  agent_type: string
+  description: string | null
+  organization_name: string
+  contact_email: string
+  use_case_summary: string
+  status: string
+  verification_method: string
+  public_key: string
+  challenge_expires_at: string
+  proof_submitted_at: string | null
+  reviewed_by: string | null
+  reviewed_at: string | null
+  review_notes: string | null
+  approved_agent_did: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface AdminRegistrationRequestListResponse {
+  requests: AdminRegistrationRequestSummary[]
+}
+
+export interface RegistrationRequestReviewBody {
+  review_notes?: string | null
+}
+
+export interface ApproveRegistrationRequestResponse {
+  request_id: string
+  status: string
+  agent_did: string
+  agent_name: string
+  agent_type: string
+  description: string | null
+  verification_method: string
+  public_key: string
+  agent_status: string
+  created_at: string
+  reviewed_at: string
+  review_notes: string | null
+  approved_agent_did: string
+  /** One-time retrieval token. Agent API key is only available via credentials claim. */
+  retrieval_token: string
+}
+
+export interface RejectRegistrationRequestResponse {
+  request_id: string
+  status: string
+  agent_did: string
+  reviewed_at: string
+  reviewed_by: string
+  review_notes: string | null
+}
+
+/* ── Agent event list ─────────────────────────────────── */
+
+export interface AgentAuditEventSummary {
+  event_id: string
+  event_hash: string
+  created_at: string
+  batched: boolean
+  anchored: boolean
+}
+
+export interface AgentAuditEventListResponse {
+  events: AgentAuditEventSummary[]
+}
+
+/* ── Ops ──────────────────────────────────────────────── */
+
+export type AutoAnchorLastStatus =
+  | 'idle'
+  | 'no_events'
+  | 'below_threshold'
+  | 'batch_created'
+  | 'anchor_succeeded'
+  | 'anchor_failed'
+
+export interface OpsStatusResponse {
+  service: string
+  version: string
+  auto_anchor_enabled: boolean
+  interval_seconds: number
+  min_events: number
+  scheduler_running: boolean
+  last_run_at: string | null
+  last_status: AutoAnchorLastStatus
+  last_batch_id: string | null
+  last_anchor_tx: string | null
+  last_error: string | null
+}
+
+/* ── UI helpers ───────────────────────────────────────── */
+
+export type SectionStatus =
+  | { kind: 'idle' }
+  | { kind: 'loading'; message: string }
+  | { kind: 'success'; message: string; data?: unknown }
+  | { kind: 'error'; message: string }
+
+export type LifecyclePhase = 'submitted' | 'batched' | 'anchored'

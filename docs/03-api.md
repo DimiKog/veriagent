@@ -83,19 +83,9 @@ Duplicate `event_id` values return `409 Conflict`.
 
 Signatures are verified **before** storage so invalid or tampered events are never committed.
 
-### Client signing (dashboard demo, v0.9.3)
+### Client signing (Python SDK / CLI)
 
-The public dashboard can sign and submit events from the browser for demo workflows:
-
-1. Paste registered **Agent DID**, **Agent API Key**, and **Agent Private Key** (base64 Ed25519 seed).
-2. Click **Use agent credentials** — the UI derives the public key, verifies the DID, and computes `verification_method`.
-3. Build the unsigned event, canonicalize with RFC 8785 / JCS (excluding `signature` and `verification_method`), sign with Ed25519, and `POST /audit/events`.
-
-The demo private key is kept in React state only and is **not** written to `localStorage` or `sessionStorage`. Production agents should sign via the **Python SDK** (v0.9.4), `scripts/sign_demo_event.py`, or direct API integration. Frontend JCS helpers mirror the backend; Python `jcs` remains the verification source of truth.
-
-### Client signing (Python SDK, v0.9.4)
-
-External agents can use the minimal Python SDK at `sdk/python/` instead of implementing canonicalization and signing by hand.
+External agents must sign outside the browser. Use the Python SDK at `sdk/python/` or the `veriagent` CLI (`submit`, `register prove`, `register claim`, `verify`).
 
 Install:
 
@@ -112,7 +102,7 @@ from veriagent import VeriAgentClient
 
 client = VeriAgentClient(
     api_base_url="https://veriagent.dimikog.org",
-    agent_api_key="va_agent_...",       # from POST /agents/register
+    agent_api_key="va_agent_...",       # from registration claim or admin register
     private_key_base64="...",           # 32-byte Ed25519 seed, base64
 )
 
@@ -127,9 +117,13 @@ response = client.submit_event(
 )
 ```
 
-The client derives `agent_did` and `verification_method` from the private key automatically. If `timestamp` is omitted, the SDK uses the current UTC ISO timestamp. The SDK does **not** include admin agent registration yet — register via `POST /agents/register` first.
+The client derives `agent_did` and `verification_method` from the private key automatically. If `timestamp` is omitted, the SDK uses the current UTC ISO timestamp.
 
-Full setup (demo key, manual registration curl, tests): [sdk/python/README.md](../sdk/python/README.md).
+Agents can be onboarded via the public registration workflow (`veriagent register …`) when `VERIAGENT_REGISTRATION_ENABLED=true`, or via break-glass `POST /agents/register` with the admin key.
+
+Full setup: [sdk/python/README.md](../sdk/python/README.md), [docs/16-production-architecture.md](16-production-architecture.md), [docs/17-first-run-guide.md](17-first-run-guide.md).
+
+The production SPA does **not** perform agent private-key signing. Python `jcs` remains the verification source of truth for canonicalization.
 
 ## GET /audit/events/{event_id}
 
@@ -455,10 +449,12 @@ Returns status metadata only:
 - `created_at`
 - `challenge_expires_at` — present while `status = pending`
 - `proof_submitted_at` — set after successful proof submission
-- `reviewed_at` — set after operator approval or rejection (Phase 3)
-- `credentials_available` — `true` when approved credentials can be retrieved via one-time token (Phase 3)
+- `reviewed_at` — set after operator approval or rejection
+- `credentials_available` — `true` when approved credentials can be claimed once
+- `credentials_claimed` / `credentials_claimed_at` — set after successful claim
+- `proof_payload` — returned only while pending and proof has not yet been submitted
 
-Never returns `api_key`, `challenge_nonce`, `proof_payload`, or `public_key`.
+Never returns `api_key`, `challenge_nonce`, or `public_key`.
 
 Returns `404 Not Found` when registration is disabled or the request does not exist.
 
@@ -491,10 +487,10 @@ Behavior:
 2. requires `status = pending` and `proof_submitted_at` is set,
 3. rejects expired requests,
 4. rejects when `agent_did` is already registered,
-5. creates an active agent using the same API key issuance path as `POST /agents/register`,
+5. creates an active agent and stores the raw API key as a one-time pending credential,
 6. sets `status = approved`, `reviewed_at`, `reviewed_by = admin`, `review_notes`, and `approved_agent_did`.
 
-Returns agent metadata plus raw `api_key` (`va_agent_...`) **once** in this response only. The raw key is never stored.
+Returns agent metadata plus a one-time `retrieval_token` (`vrt_…`). The agent API key is **not** returned here — the applicant claims it via `POST .../credentials` after a fresh ownership proof (CLI: `veriagent register claim`).
 
 Returns `403 Forbidden` when proof has not been submitted.
 
@@ -522,6 +518,32 @@ Returns `404 Not Found` when the request does not exist.
 
 Returns `409 Conflict` when the request is not pending.
 
-One-time credential retrieval (`POST /registration/requests/{id}/credentials`) is **not implemented yet**.
+### POST /registration/requests/{request_id}/credentials
 
-Design reference: [14-registration-workflow.md](14-registration-workflow.md).
+One-time credential claim after approval. **Public** with ownership proof (optional header `X-VeriAgent-Retrieval-Token`).
+
+Request body:
+- `proof_signature` — base64 Ed25519 signature over the JCS-canonical claim payload
+- `verification_method` — must match the registration request
+
+Claim payload signed by the applicant:
+
+```json
+{
+  "purpose": "veriagent-credentials-claim",
+  "request_id": "<uuid>",
+  "agent_did": "did:key:z..."
+}
+```
+
+Behavior:
+1. requires `status = approved` and credentials still available,
+2. verifies the ownership signature,
+3. optionally validates `X-VeriAgent-Retrieval-Token` when present,
+4. returns the raw `api_key` (`va_agent_...`) **once** and marks credentials claimed.
+
+Returns `409 Conflict` when credentials were already claimed.
+
+Returns `404 Not Found` when the request does not exist or credentials are not available.
+
+Design reference: [14-registration-workflow.md](14-registration-workflow.md). First-run walkthrough: [17-first-run-guide.md](17-first-run-guide.md).

@@ -1,23 +1,39 @@
 import type {
-  AnchorBatchResponse,
+  ApproveRegistrationRequestResponse,
+  AdminRegistrationRequestListResponse,
+  AgentAuditEventListResponse,
   BatchAnchorRecord,
   BatchProofResponse,
   BatchResponse,
-  HealthResponse,
+  CreateRegistrationRequest,
+  CreateRegistrationRequestResponse,
+  EventLifecycleStatusResponse,
   MerkleProofStep,
   MerkleVerifyResponse,
-  SignedAuditEvent,
-  StoreEventResponse,
+  OpsStatusResponse,
+  RegistrationRequestStatusResponse,
+  RejectRegistrationRequestResponse,
 } from '../types'
 
 const PRODUCTION_API_BASE_URL = 'https://veriagent.dimikog.org'
 
-/** Dev server proxies `/veriagent-api` → production API (see vite.config.ts). */
-const DEV_API_BASE_URL = '/veriagent-api'
+/** Local FastAPI default for `npm run dev` (override with VITE_API_BASE_URL). */
+const LOCAL_API_BASE_URL = 'http://127.0.0.1:8000'
 
 export const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ??
-  (import.meta.env.DEV ? DEV_API_BASE_URL : PRODUCTION_API_BASE_URL)
+  (import.meta.env.DEV ? LOCAL_API_BASE_URL : PRODUCTION_API_BASE_URL)
+
+/**
+ * Absolute API base for CLI snippets shown in the UI.
+ * Relative proxy paths are not useful outside the browser, so fall back to
+ * the local API in dev and production host otherwise.
+ */
+export const CLI_API_BASE_URL = API_BASE_URL.startsWith('http')
+  ? API_BASE_URL
+  : import.meta.env.DEV
+    ? LOCAL_API_BASE_URL
+    : PRODUCTION_API_BASE_URL
 
 /** Swagger UI — FastAPI serves `/docs` at the API host root, not under `/api/`. */
 export const API_DOCS_URL = import.meta.env.DEV
@@ -28,6 +44,9 @@ export const BLOCKSCOUT_TX_BASE = 'https://blockexplorer.dimikog.org/tx/'
 
 /** False while BLOCKSCOUT_TX_BASE is still a placeholder — hides the link in the UI. */
 export const BLOCKSCOUT_CONFIGURED = !BLOCKSCOUT_TX_BASE.includes('example')
+
+export const CONTRACT_ADDRESS = '0x30546417E83A0C96bf87BEdfEe59De8FBdf1187A'
+export const CONTRACT_EXPLORER_URL = `https://blockexplorer.dimikog.org/address/${CONTRACT_ADDRESS}`
 
 export class ApiError extends Error {
   status: number
@@ -121,59 +140,38 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T
 }
 
-export function getHealth(): Promise<HealthResponse> {
-  return request<HealthResponse>('/health')
+export function getOpsStatus(): Promise<OpsStatusResponse> {
+  return request<OpsStatusResponse>('/ops/status')
 }
 
-export function storeAuditEvent(
-  event: SignedAuditEvent,
+export function listAgentEvents(
   agentApiKey: string,
-): Promise<StoreEventResponse> {
-  return request<StoreEventResponse>('/audit/events', {
-    method: 'POST',
+  limit = 50,
+  offset = 0,
+): Promise<AgentAuditEventListResponse> {
+  const params = new URLSearchParams({
+    limit: String(limit),
+    offset: String(offset),
+  })
+  return request<AgentAuditEventListResponse>(`/audit/events?${params}`, {
     headers: {
       'X-VeriAgent-API-Key': agentApiKey,
     },
-    body: JSON.stringify(event),
   })
 }
 
-/** User-facing message for POST /audit/events auth and signature failures. */
-export function formatStoreEventError(error: unknown): string {
-  if (error instanceof ApiError) {
-    if (error.status === 401) {
-      return 'Invalid or missing agent API key. Register an agent via the admin API and paste the issued key here.'
-    }
-    if (error.status === 403) {
-      if (error.detail === 'Invalid event signature') {
-        return 'Invalid event signature. The signed canonical payload did not verify against the registered agent key. Check Agent DID, private key, and event fields.'
-      }
-      if (error.detail === 'verification_method does not match registered agent') {
-        return 'verification_method does not match the registered agent. Re-run "Use agent credentials" with the correct Agent DID and private key.'
-      }
-      if (error.detail === 'event.agent_id does not match authenticated agent') {
-        return 'event.agent_id does not match the authenticated agent. Use the Agent DID that matches this API key.'
-      }
-      return 'Request forbidden. Check that Agent DID, API key, private key, and verification_method match the registered agent.'
-    }
-    return error.displayMessage
-  }
-  if (error instanceof Error) {
-    return error.message
-  }
-  return 'An unexpected error occurred'
+export function getEventLifecycleStatus(
+  eventId: string,
+): Promise<EventLifecycleStatusResponse> {
+  return request<EventLifecycleStatusResponse>(
+    `/audit/events/${encodeURIComponent(eventId)}/status`,
+  )
 }
 
 export function getBatch(batchId: string): Promise<BatchResponse> {
   return request<BatchResponse>(
     `/audit/batches/${encodeURIComponent(batchId)}`,
   )
-}
-
-export function createBatch(): Promise<BatchResponse> {
-  return request<BatchResponse>('/audit/batches', {
-    method: 'POST',
-  })
 }
 
 export function getBatchProof(
@@ -196,15 +194,76 @@ export function verifyMerkleProof(payload: {
   })
 }
 
-export function anchorBatch(batchId: string): Promise<AnchorBatchResponse> {
-  return request<AnchorBatchResponse>(
-    `/audit/batches/${encodeURIComponent(batchId)}/anchor`,
-    { method: 'POST' },
-  )
-}
-
 export function getBatchAnchor(batchId: string): Promise<BatchAnchorRecord> {
   return request<BatchAnchorRecord>(
     `/audit/batches/${encodeURIComponent(batchId)}/anchor`,
+  )
+}
+
+/* ── Registration ─────────────────────────────────────── */
+
+export function createRegistrationRequest(
+  body: CreateRegistrationRequest,
+): Promise<CreateRegistrationRequestResponse> {
+  return request<CreateRegistrationRequestResponse>('/registration/requests', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+export function getRegistrationRequestStatus(
+  requestId: string,
+): Promise<RegistrationRequestStatusResponse> {
+  return request<RegistrationRequestStatusResponse>(
+    `/registration/requests/${encodeURIComponent(requestId)}`,
+  )
+}
+
+export function listRegistrationRequests(
+  adminKey: string,
+  status?: string,
+): Promise<AdminRegistrationRequestListResponse> {
+  const params = status ? `?status=${encodeURIComponent(status)}` : ''
+  return request<AdminRegistrationRequestListResponse>(
+    `/registration/requests${params}`,
+    {
+      headers: {
+        'X-VeriAgent-Admin-Key': adminKey,
+      },
+    },
+  )
+}
+
+export function approveRegistrationRequest(
+  adminKey: string,
+  requestId: string,
+  notes?: string,
+): Promise<ApproveRegistrationRequestResponse> {
+  return request<ApproveRegistrationRequestResponse>(
+    `/registration/requests/${encodeURIComponent(requestId)}/approve`,
+    {
+      method: 'POST',
+      headers: {
+        'X-VeriAgent-Admin-Key': adminKey,
+      },
+      body: JSON.stringify({ review_notes: notes ?? null }),
+    },
+  )
+}
+
+export function rejectRegistrationRequest(
+  adminKey: string,
+  requestId: string,
+  notes?: string,
+): Promise<RejectRegistrationRequestResponse> {
+  return request<RejectRegistrationRequestResponse>(
+    `/registration/requests/${encodeURIComponent(requestId)}/reject`,
+    {
+      method: 'POST',
+      headers: {
+        'X-VeriAgent-Admin-Key': adminKey,
+      },
+      body: JSON.stringify({ review_notes: notes ?? null }),
+    },
   )
 }

@@ -1,8 +1,16 @@
 import hmac
+import json
 from contextlib import asynccontextmanager
+from pathlib import Path
 
-from fastapi import Depends, FastAPI, HTTPException, Request
+from dotenv import load_dotenv
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
+
+# Load backend/.env if present. Existing exported env vars take precedence.
+_ENV_FILE = Path(__file__).resolve().parent.parent / ".env"
+if _ENV_FILE.is_file():
+    load_dotenv(_ENV_FILE, override=False)
 
 from app.hashing import canonicalize_event, hash_event
 from app.merkle import merkle_proof, verify_inclusion_proof
@@ -15,12 +23,16 @@ from app.auth import (
     require_admin_api_key,
 )
 from app.models import (
+    AgentAuditEventListResponse,
+    AgentAuditEventSummary,
     AgentResponse,
     AnchorBatchResponse,
     AuditEvent,
     BatchAnchorRecord,
     BatchProofResponse,
     BatchResponse,
+    ClaimRegistrationCredentialsRequest,
+    ClaimRegistrationCredentialsResponse,
     EventLifecycleStatusResponse,
     IngestionReceipt,
     MerkleProofStep,
@@ -53,9 +65,11 @@ from app.signatures import (
 )
 from app.auto_anchor_scheduler import get_auto_anchor_ops_status, start_auto_anchor_scheduler, stop_auto_anchor_scheduler
 from app.registration import (
+    RETRIEVAL_TOKEN_HEADER,
     RegistrationChallengeExpiredError,
     RegistrationProofInvalidError,
     approve_registration_request_by_admin,
+    claim_registration_credentials,
     create_registration_request_with_challenge,
     get_registration_request_status,
     hash_client_ip,
@@ -69,6 +83,8 @@ from app.storage import (
     DuplicatePendingRegistrationError,
     EventAlreadyExistsError,
     NoUnbatchedEventsError,
+    RegistrationCredentialsAlreadyClaimedError,
+    RegistrationCredentialsNotAvailableError,
     RegistrationProofNotSubmittedError,
     RegistrationRequestExpiredError,
     RegistrationRequestNotFoundError,
@@ -83,6 +99,7 @@ from app.storage import (
     get_batch_event,
     get_event_lifecycle_status,
     init_db,
+    list_audit_events_for_agent,
     register_agent,
     store_audit_event,
 )
@@ -98,7 +115,7 @@ async def lifespan(_: FastAPI):
         await stop_auto_anchor_scheduler(scheduler_task, scheduler_stop)
 
 
-API_VERSION = "1.0-pre"
+API_VERSION = "1.0.0-rc.1"
 
 app = FastAPI(title="VeriAgent API", version=API_VERSION, lifespan=lifespan)
 
@@ -151,11 +168,22 @@ def require_registration_enabled() -> None:
 def _registration_status_response(
     stored,
 ) -> RegistrationRequestStatusResponse:
+    credentials_claimed = (
+        stored.status == "approved" and stored.credentials_retrieved_at is not None
+    )
     credentials_available = (
         stored.status == "approved"
-        and stored.retrieval_token_hash is not None
         and stored.credentials_retrieved_at is None
+        and stored.pending_api_key is not None
     )
+    proof_payload = None
+    if stored.status == "pending" and stored.proof_submitted_at is None:
+        try:
+            proof_payload = RegistrationProofPayload(
+                **json.loads(stored.proof_payload_json)
+            )
+        except (TypeError, ValueError, json.JSONDecodeError):
+            proof_payload = None
     return RegistrationRequestStatusResponse(
         request_id=stored.request_id,
         status=stored.status,
@@ -167,6 +195,11 @@ def _registration_status_response(
         proof_submitted_at=stored.proof_submitted_at,
         reviewed_at=stored.reviewed_at,
         credentials_available=credentials_available,
+        credentials_claimed=credentials_claimed,
+        credentials_claimed_at=stored.credentials_retrieved_at
+        if credentials_claimed
+        else None,
+        proof_payload=proof_payload,
     )
 
 
@@ -287,6 +320,31 @@ def store_event(
         event_hash=stored.event_hash,
         created_at=stored.created_at,
         receipt=receipt,
+    )
+
+
+@app.get("/audit/events", response_model=AgentAuditEventListResponse)
+def list_agent_audit_events(
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    agent: StoredAgent = Depends(authenticate_agent),
+):
+    events = list_audit_events_for_agent(
+        agent_did=agent.agent_did,
+        limit=limit,
+        offset=offset,
+    )
+    return AgentAuditEventListResponse(
+        events=[
+            AgentAuditEventSummary(
+                event_id=event.event_id,
+                event_hash=event.event_hash,
+                created_at=event.created_at,
+                batched=event.batched,
+                anchored=event.anchored,
+            )
+            for event in events
+        ]
     )
 
 
@@ -622,9 +680,11 @@ def approve_registration_request_endpoint(
     __: None = Depends(require_admin_api_key),
 ):
     try:
-        stored_request, stored_agent, api_key = approve_registration_request_by_admin(
-            request_id=request_id,
-            review_notes=request.review_notes,
+        stored_request, stored_agent, retrieval_token = (
+            approve_registration_request_by_admin(
+                request_id=request_id,
+                review_notes=request.review_notes,
+            )
         )
     except RegistrationRequestNotFoundError as exc:
         raise HTTPException(
@@ -668,7 +728,54 @@ def approve_registration_request_endpoint(
         reviewed_at=stored_request.reviewed_at,
         review_notes=stored_request.review_notes,
         approved_agent_did=stored_request.approved_agent_did,
+        retrieval_token=retrieval_token,
+    )
+
+
+@app.post(
+    "/registration/requests/{request_id}/credentials",
+    response_model=ClaimRegistrationCredentialsResponse,
+)
+def claim_registration_credentials_endpoint(
+    request_id: str,
+    request: ClaimRegistrationCredentialsRequest,
+    _: None = Depends(require_registration_enabled),
+    x_veriagent_retrieval_token: str | None = Header(
+        None,
+        alias=RETRIEVAL_TOKEN_HEADER,
+    ),
+):
+    try:
+        stored_request, stored_agent, api_key = claim_registration_credentials(
+            request_id=request_id,
+            proof_signature=request.proof_signature,
+            verification_method=request.verification_method,
+            retrieval_token=x_veriagent_retrieval_token,
+        )
+    except RegistrationRequestNotFoundError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Registration request not found: {exc.args[0]}",
+        ) from exc
+    except RegistrationCredentialsAlreadyClaimedError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Registration credentials already claimed: {exc.args[0]}",
+        ) from exc
+    except RegistrationCredentialsNotAvailableError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Registration credentials not available: {exc.args[0]}",
+        ) from exc
+    except RegistrationProofInvalidError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+    return ClaimRegistrationCredentialsResponse(
+        request_id=stored_request.request_id,
+        agent_did=stored_agent.agent_did,
         api_key=api_key,
+        agent_status=stored_agent.status,
+        verification_method=stored_agent.verification_method,
     )
 
 

@@ -12,6 +12,8 @@ from app.signatures import validate_ed25519_did_key_agent, verify_signature
 from app.storage import (
     AgentAlreadyExistsError,
     DuplicatePendingRegistrationError,
+    RegistrationCredentialsAlreadyClaimedError,
+    RegistrationCredentialsNotAvailableError,
     RegistrationProofNotSubmittedError,
     RegistrationRequestExpiredError,
     RegistrationRequestNotFoundError,
@@ -19,6 +21,7 @@ from app.storage import (
     StoredAgent,
     StoredRegistrationRequest,
     approve_registration_request,
+    consume_registration_pending_api_key,
     create_registration_request,
     expire_stale_requests,
     get_agent,
@@ -33,6 +36,9 @@ REGISTRATION_ENABLED_ENV = "VERIAGENT_REGISTRATION_ENABLED"
 CHALLENGE_TTL_MINUTES_ENV = "VERIAGENT_REGISTRATION_CHALLENGE_TTL_MINUTES"
 DEFAULT_CHALLENGE_TTL_MINUTES = 15
 PROOF_PURPOSE = "veriagent-registration"
+CREDENTIALS_CLAIM_PURPOSE = "veriagent-credentials-claim"
+RETRIEVAL_TOKEN_PREFIX = "vrt_"
+RETRIEVAL_TOKEN_HEADER = "X-VeriAgent-Retrieval-Token"
 
 
 class RegistrationDisabledError(Exception):
@@ -238,6 +244,12 @@ def approve_registration_request_by_admin(
     request_id: str,
     review_notes: str | None = None,
 ) -> tuple[StoredRegistrationRequest, StoredAgent, str]:
+    """Approve a proved registration request.
+
+    Creates the agent (api_key_hash only), stores pending_api_key for claim,
+    and returns a one-time retrieval_token. The raw api_key is never returned
+    to the admin caller — applicants must claim via .../credentials.
+    """
     if not is_registration_enabled():
         raise RegistrationDisabledError()
 
@@ -245,13 +257,71 @@ def approve_registration_request_by_admin(
 
     api_key = generate_agent_api_key()
     api_key_hash = hash_agent_api_key(api_key)
+    retrieval_token = RETRIEVAL_TOKEN_PREFIX + secrets.token_urlsafe(32)
+    retrieval_token_hash = hashlib.sha256(
+        retrieval_token.encode("utf-8")
+    ).hexdigest()
     stored_request, stored_agent = approve_registration_request(
         request_id=request_id,
         api_key_hash=api_key_hash,
         reviewed_by="admin",
         review_notes=review_notes,
+        retrieval_token_hash=retrieval_token_hash,
+        pending_api_key=api_key,
     )
-    return stored_request, stored_agent, api_key
+    return stored_request, stored_agent, retrieval_token
+
+
+def build_credentials_claim_payload(request_id: str, agent_did: str) -> dict[str, str]:
+    return {
+        "purpose": CREDENTIALS_CLAIM_PURPOSE,
+        "request_id": request_id,
+        "agent_did": agent_did,
+    }
+
+
+def claim_registration_credentials(
+    request_id: str,
+    proof_signature: str,
+    verification_method: str,
+    retrieval_token: str | None = None,
+) -> tuple[StoredRegistrationRequest, StoredAgent, str]:
+    if not is_registration_enabled():
+        raise RegistrationDisabledError()
+
+    stored = get_registration_request(request_id)
+    if stored is None:
+        raise RegistrationRequestNotFoundError(request_id)
+
+    if stored.status != "approved":
+        raise RegistrationCredentialsNotAvailableError(request_id)
+    if stored.credentials_retrieved_at is not None:
+        raise RegistrationCredentialsAlreadyClaimedError(request_id)
+    if stored.pending_api_key is None:
+        raise RegistrationCredentialsNotAvailableError(request_id)
+
+    if not hmac_compare(verification_method, stored.verification_method):
+        raise RegistrationProofInvalidError("verification_method does not match request")
+
+    claim_payload = build_credentials_claim_payload(
+        request_id=stored.request_id,
+        agent_did=stored.agent_did,
+    )
+    canonical_bytes = canonicalize_dict(claim_payload)
+    if not verify_signature(stored.public_key, canonical_bytes, proof_signature):
+        raise RegistrationProofInvalidError("Invalid proof signature")
+
+    if retrieval_token is not None:
+        if stored.retrieval_token_hash is None:
+            raise RegistrationProofInvalidError("Invalid retrieval token")
+        provided_hash = hashlib.sha256(retrieval_token.encode("utf-8")).hexdigest()
+        if not hmac.compare_digest(provided_hash, stored.retrieval_token_hash):
+            raise RegistrationProofInvalidError("Invalid retrieval token")
+
+    updated, api_key = consume_registration_pending_api_key(request_id)
+    agent = get_agent(updated.agent_did)
+    assert agent is not None
+    return updated, agent, api_key
 
 
 def reject_registration_request_by_admin(

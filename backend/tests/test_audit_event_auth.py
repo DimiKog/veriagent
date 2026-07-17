@@ -89,7 +89,7 @@ def test_public_read_and_verify_endpoints_still_work_without_agent_key():
 
     health_response = client.get("/health")
     assert health_response.status_code == 200
-    assert health_response.json()["version"] == "1.0-pre"
+    assert health_response.json()["version"] == "1.0.0-rc.1"
 
     hash_response = client.post("/audit/hash", json=payload)
     assert hash_response.status_code == 200

@@ -2,7 +2,7 @@
 
 VeriAgent is a **verifiable audit commitment layer for AI-agent actions**. It records structured audit events, binds them to registered agent identities, batches cryptographic commitments into Merkle trees, and anchors batch roots on a Besu blockchain. Third parties can verify inclusion proofs and on-chain anchors without trusting a single client implementation.
 
-This document describes the system at **v1.0-RC1** (backend API `1.0-pre`). It is written for researchers, operators, and integrators evaluating the prototype.
+This document describes the system at **v1.0.0-rc.1** (backend, SDK, and frontend share that version string). It is written for researchers, operators, and integrators evaluating the prototype.
 
 ---
 
@@ -68,9 +68,9 @@ Any process that constructs audit events and calls the API: custom middleware, a
 
 Minimal library at `sdk/python/`. Handles `did:key` derivation, RFC 8785 / JCS canonicalization, Ed25519 signing, and `POST /audit/events` with `X-VeriAgent-API-Key`. Does not include admin registration or batch/anchor operations.
 
-### Browser dashboard
+### Browser SPA
 
-Static React app on GitHub Pages (`https://dimikog.github.io/veriagent/`). Demonstrates the full workflow including **in-browser Ed25519 signing** for demo events. The demo private key lives in memory only. The dashboard no longer exposes batch creation or anchoring operations. Public users can submit signed audit events and inspect existing batch, proof, and anchor evidence. Batch creation and anchoring are performed either by operators through admin-protected API routes or automatically by the backend scheduler when auto-anchoring is enabled.
+Static React app on GitHub Pages (`https://dimikog.github.io/veriagent/`) with separated surfaces: **Dashboard** (public read-only verification), **Register** (public identity onboarding), **Console** (operator event list), and **Admin** (registration review). The browser never holds agent private keys; prove/claim/submit/verify run via the Python SDK/CLI. Batch creation and anchoring are performed either by operators through admin-protected API routes or automatically by the backend scheduler when auto-anchoring is enabled. See [16-production-architecture.md](16-production-architecture.md).
 
 ### FastAPI backend
 
@@ -204,12 +204,11 @@ Public `GET /ops/status` returns scheduler configuration and last cycle metadata
 
 - **SQLite is local** — Single-node storage; no built-in replication or multi-region HA.
 - **Registry is centralized** — Agent records live in operator-controlled SQLite, not on a public DID network.
-- **Admin registration is manual** — No self-service or VC-based onboarding flow. A proposed **demo mode** (`POST /demo/agents`, browser keygen, short-lived demo agents) is [design only](09-demo-mode.md); not implemented.
+- **Public registration is optional** — Enabled with `VERIAGENT_REGISTRATION_ENABLED`; break-glass `POST /agents/register` remains for operators. A proposed **demo mode** (`POST /demo/agents`, short-lived demo agents) is [design only](09-demo-mode.md); not implemented.
 - **No VC-based onboarding yet** — W3C Verifiable Credentials are not used for agent identity.
-- **No independent verifier CLI yet** — Verification requires API calls, custom scripts, or manual Blockscout/RPC checks.
+- **Offline verifier does not yet re-query RPC** — `veriagent verify` checks hash, signature, Merkle inclusion, and anchor metadata locally; on-chain `getBatch` comparison is a future enhancement ([15-independent-verifier.md](15-independent-verifier.md)).
 - **No off-chain object storage yet** — Events reference content via hashes only; raw inputs/outputs are not stored by VeriAgent.
-- **Dashboard lag** — UI does not reflect auto-anchoring or admin-protected batch steps without operator tooling.
-- **Python SDK scope** — Event submission only; no admin helpers, async client, or TypeScript SDK.
+- **Python SDK scope** — Registration prove/claim, event submit, and offline verify; no TypeScript SDK yet.
 
 ---
 

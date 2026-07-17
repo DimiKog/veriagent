@@ -4,7 +4,7 @@
 
 VeriAgent records structured audit events from AI agents, commits them with canonical hashing, batches them into Merkle trees, and anchors batch roots on Besu. A public dashboard walks through the full workflow end to end.
 
-**Backend API version:** `1.0-pre` (see `/health` and `/ops/status`).
+**Release version:** `1.0.0-rc.1` (backend `/health`, Python SDK, and frontend badge).
 
 ## Public demo
 
@@ -17,7 +17,7 @@ VeriAgent records structured audit events from AI agents, commits them with cano
 | Ops status | https://veriagent.dimikog.org/ops/status |
 | Block explorer | https://blockexplorer.dimikog.org/ |
 
-The dashboard ships at **v0.9.3** (browser-side event signing). The production API reports **`1.0-pre`** with automatic batching/anchoring and an ops status endpoint.
+The public SPA ships with separated surfaces (**Dashboard / Register / Console / Admin**). Production signing uses the Python SDK/CLI — the browser never holds agent private keys. Architecture: [docs/16-production-architecture.md](docs/16-production-architecture.md). The production API reports **`1.0.0-rc.1`** with automatic batching/anchoring and an ops status endpoint.
 
 The `VeriAgentAnchor` contract is deployed and verified on **Besu Edu-Net** (`0x30546417E83A0C96bf87BEdfEe59De8FBdf1187A`). Deployment notes: [docs/02-devlog.md](docs/02-devlog.md). Block explorer (Blockscout): `https://blockexplorer.dimikog.org/` — transaction links in the dashboard use `https://blockexplorer.dimikog.org/tx/{hash}`.
 
@@ -35,14 +35,14 @@ VeriAgent provides a prototype audit pipeline for AI-agent activity:
 - Restricts Merkle batch creation and on-chain anchoring to admin API key holders (v0.9.6)
 - **Automatically batches and anchors unbatched events on a background scheduler when enabled (v1.0-pre)**
 - **Exposes read-only scheduler ops status at `GET /ops/status` (v1.0-pre)**
-- Signs audit events in the browser for demo use via the dashboard (v0.9.3)
+- Signs audit events via the official Python SDK/CLI (browser private keys removed from production UI)
 - Batches event hashes into Merkle trees
 - Generates and verifies Merkle inclusion proofs
 - Anchors Merkle roots on Besu via `VeriAgentAnchor`
-- Exposes a public dashboard for the workflow
-- Provides a minimal **Python SDK** for external agent event submission (v0.9.4)
+- Exposes separated SPA surfaces: public dashboard, registration, operator console, admin
+- Provides a Python SDK/CLI for registration prove/claim, event submit, and offline verify
 
-See [docs/03-api.md](docs/03-api.md) for endpoint details.
+See [docs/03-api.md](docs/03-api.md) for endpoint details. See [docs/16-production-architecture.md](docs/16-production-architecture.md) for the production surface split.
 
 ## Trust model and limitations
 
@@ -52,7 +52,8 @@ This is a **research prototype**, not a production compliance product.
 - **SQLite is mutable** before anchoring. Local records can be changed until a batch root is anchored on chain.
 - **Blockchain anchoring** provides a timestamped, public commitment *after* anchoring. It does not prove the underlying agent action occurred.
 - **Event submission requires a registered agent.** `POST /audit/events` accepts events only from active agents that present a valid `X-VeriAgent-API-Key`, set `agent_id` to their registered DID, and sign the unsigned canonical event payload with their registered Ed25519 key. Public read and verification endpoints remain open.
-- **Auto batch/anchor is server-side only.** When enabled, the scheduler runs inside the API process; the dashboard does not yet reflect automatic batching/anchoring.
+- **Production signing is SDK/CLI-only.** The browser never holds agent private keys. Registration proof, credential claim, and event submit run beside the agent via `veriagent` CLI / Python SDK.
+- **Auto batch/anchor is server-side.** When enabled, the scheduler runs inside the API process; `/console` and `/dashboard` observe lifecycle via public/agent read APIs.
 - **This is not an EU AI Act compliance product.** It demonstrates technical building blocks only.
 
 ## Architecture
@@ -90,13 +91,14 @@ cd backend
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-export VERIAGENT_RECEIPT_SECRET="replace-with-a-long-random-secret"
-export VERIAGENT_ADMIN_API_KEY="replace-with-a-long-random-admin-key"
+cp .env.example .env   # edit secrets; loaded automatically on startup
 python -m pytest
 uvicorn app.main:app --reload
 ```
 
 Local API docs: http://127.0.0.1:8000/docs
+
+The API loads `backend/.env` when the file exists (same behavior locally and in production). Variables already exported in the process environment take precedence over `.env`. See `.env.example` for registration, admin, auto-anchor, and blockchain settings. Full rules: [docs/05-deployment.md](docs/05-deployment.md#how-configuration-is-loaded-local-and-production).
 
 Check scheduler ops status locally:
 
@@ -157,12 +159,12 @@ Usage and examples: [sdk/python/README.md](sdk/python/README.md).
 ```bash
 cd frontend
 npm install
-npm run dev      # http://localhost:5173/veriagent/
+npm run dev      # http://localhost:5173/veriagent/ → API http://127.0.0.1:8000
 npm run build
 npm run preview
 ```
 
-Local dev proxies API calls through Vite; the GitHub Pages build calls the public API directly. See [frontend/README.md](frontend/README.md).
+Local `npm run dev` talks to `http://127.0.0.1:8000` by default. Override with `VITE_API_BASE_URL` (e.g. production). The GitHub Pages build uses the public API. See [frontend/README.md](frontend/README.md) and [docs/17-first-run-guide.md](docs/17-first-run-guide.md).
 
 ### Contracts (optional)
 
@@ -173,7 +175,7 @@ Foundry tests and local Anvil deployment are documented in [docs/05-deployment.m
 | Component | How it runs |
 | --- | --- |
 | Backend | Linux VM — systemd service, Nginx reverse proxy, HTTPS at `veriagent.dimikog.org` |
-| Frontend | GitHub Pages — automatic deploy from `master` to https://dimikog.github.io/veriagent/ |
+| Frontend | GitHub Pages — CI builds on push to `master` and publishes `frontend/dist/` to `gh-pages` (build output is not kept on `master`) |
 | Secrets | Private keys and tokens only via environment variables or gitignored `.env` files on the host |
 
 After deploy, verify:
@@ -189,7 +191,7 @@ Operational details: [docs/05-deployment.md](docs/05-deployment.md). SQLite back
 
 - **Never commit** `.env`, private keys, API tokens, or deployer credentials.
 - **Never commit** `backend/data/veriagent.db`, virtualenvs, or Foundry broadcast artifacts with sensitive material.
-- The **frontend never handles admin keys, wallet private keys, or anchor signing secrets**. On-chain anchoring is performed server-side by the backend and requires `X-VeriAgent-Admin-Key` on `POST /audit/batches` and `POST /audit/batches/{batch_id}/anchor`. The dashboard accepts a **demo agent private key** in memory only (not persisted) to sign audit events in the browser — do not paste production signing keys into the UI.
+- The **frontend never handles agent private keys, admin keys, wallet private keys, or anchor signing secrets**. Registration proof, credential claim, and event signing run in the Python SDK/CLI. On-chain anchoring is performed server-side by the backend.
 - **`GET /ops/status` is public** and returns scheduler configuration and last-run metadata only — no admin key, receipt secret, RPC URL, or private keys.
 
 ## Documentation
@@ -207,6 +209,9 @@ Operational details: [docs/05-deployment.md](docs/05-deployment.md). SQLite back
 | [docs/11-demo-script.md](docs/11-demo-script.md) | 60–90 second presentation demo script |
 | [docs/12-release-notes-v1.0.0-rc1.md](docs/12-release-notes-v1.0.0-rc1.md) | v1.0.0-RC1 release notes |
 | [docs/13-commercial-readiness-roadmap.md](docs/13-commercial-readiness-roadmap.md) | Research → commercial pilot roadmap |
+| [docs/15-independent-verifier.md](docs/15-independent-verifier.md) | Independent verifier CLI (`veriagent verify`) |
+| [docs/16-production-architecture.md](docs/16-production-architecture.md) | Production surfaces: dashboard / register / console / admin + SDK/CLI |
+| [docs/17-first-run-guide.md](docs/17-first-run-guide.md) | Install, register, submit, observe, and independently verify |
 | [docs/02-devlog.md](docs/02-devlog.md) | Phase-by-phase development log |
 | [sdk/python/README.md](sdk/python/README.md) | Python SDK install and usage |
 | [frontend/README.md](frontend/README.md) | Frontend setup and Pages workflow |

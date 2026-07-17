@@ -69,7 +69,9 @@ def create_and_prove_registration_request(payload=None):
     return body["request_id"], body
 
 
-def test_registration_disabled_by_default():
+def test_registration_disabled_by_default(monkeypatch):
+    # Ignore developer .env; assert the code default when the flag is unset.
+    monkeypatch.delenv("VERIAGENT_REGISTRATION_ENABLED", raising=False)
     response = post_registration_request()
 
     assert response.status_code == 404
@@ -197,7 +199,7 @@ def test_registration_status_polling(registration_enabled):
     assert pending_body["proof_submitted_at"] is None
     assert "api_key" not in pending_body
     assert "challenge_nonce" not in pending_body
-    assert "proof_payload" not in pending_body
+    assert pending_body["proof_payload"] == body["proof_payload"]
 
     proof_signature = sign_proof_payload(body["proof_payload"])
     proof_response = client.post(
@@ -214,6 +216,7 @@ def test_registration_status_polling(registration_enabled):
     proved_body = proved_status.json()
     assert proved_body["status"] == "pending"
     assert proved_body["proof_submitted_at"]
+    assert proved_body["proof_payload"] is None
     assert "api_key" not in proved_body
 
 
@@ -354,7 +357,7 @@ def test_approve_proved_request_creates_active_agent(registration_enabled):
     assert agent_response.json()["status"] == "active"
 
 
-def test_approve_returns_raw_api_key_once(registration_enabled):
+def test_approve_returns_retrieval_token_not_api_key(registration_enabled):
     request_id, _ = create_and_prove_registration_request()
 
     approve_response = client.post(
@@ -363,12 +366,17 @@ def test_approve_returns_raw_api_key_once(registration_enabled):
         headers=admin_request_headers(),
     )
     assert approve_response.status_code == 200
-    api_key = approve_response.json()["api_key"]
-    assert api_key.startswith("va_agent_")
+    body = approve_response.json()
+    assert "api_key" not in body
+    assert body["retrieval_token"].startswith("vrt_")
+    assert body["status"] == "approved"
+    assert body["agent_status"] == "active"
 
     status_response = client.get(f"/registration/requests/{request_id}")
     assert status_response.status_code == 200
     assert "api_key" not in status_response.json()
+    assert "retrieval_token" not in status_response.json()
+    assert status_response.json()["credentials_available"] is True
 
 
 def test_approve_without_proof_fails(registration_enabled):

@@ -1,24 +1,24 @@
-# VeriAgent Registration Request & Approval Workflow (Design)
+# VeriAgent Registration Request & Approval Workflow
 
-**Status:** Phase 1–3 implemented (public request/proof/status + admin approval); credential retrieval and demo mode not implemented.  
-**Target release context:** Post v1.0-RC1; aligns with [13-commercial-readiness-roadmap.md](13-commercial-readiness-roadmap.md) Phase 1 (pilot-ready) and [09-demo-mode.md](09-demo-mode.md) §7 (future production onboarding).
+**Status:** Implemented — public request/proof/status, admin approve/reject, and one-time credential claim (`POST .../credentials`). Demo mode remains design-only ([09-demo-mode.md](09-demo-mode.md)).  
+**Target release context:** Aligns with [13-commercial-readiness-roadmap.md](13-commercial-readiness-roadmap.md) Phase 1 (pilot-ready) and [16-production-architecture.md](16-production-architecture.md).
 
-This document designs a **registration request and approval workflow** that lets agent operators apply for production access without sharing the global admin key, while preserving VeriAgent's existing cryptographic binding model (Ed25519 `did:key`, per-agent API keys, signature verification at ingestion).
+This document describes the **registration request and approval workflow** that lets agent operators apply for production access without sharing the global admin key, while preserving VeriAgent's cryptographic binding model (Ed25519 `did:key`, per-agent API keys, signature verification at ingestion).
 
 ---
 
-## 1. Current admin registration model
+## 1. Break-glass admin registration model
 
-VeriAgent v1.0-RC1 registers agents through a single **admin-protected** endpoint. There is no self-service or approval queue today.
+VeriAgent still supports a single **admin-protected** endpoint for operator-initiated agents. The public registration request workflow (sections below) is the preferred pilot path.
 
 ### Endpoint and authentication
 
-| Item | Current behavior |
+| Item | Behavior |
 | --- | --- |
 | Route | `POST /agents/register` |
 | Auth | Header `X-VeriAgent-Admin-Key` must match env `VERIAGENT_ADMIN_API_KEY` |
 | Lookup | `GET /agents/{agent_did}` — same admin auth |
-| SDK | Python SDK submits events only; admin registration is manual (curl, Swagger, operator scripts) |
+| SDK | Python SDK/CLI submits events and registration prove/claim; admin registration remains a break-glass operator path |
 
 ### Request payload
 
@@ -301,7 +301,7 @@ Backend steps:
 
 - Extend Python SDK with `submit_registration_request()` and `submit_registration_proof()` (Phase 2).
 - Document a minimal curl + OpenSSL/libsodium example for pilots (Phase 1).
-- Dashboard **must not** be required for production onboarding; browser keygen remains demo-only ([06-threat-model.md](06-threat-model.md)).
+- Dashboard **must not** be required for production onboarding; agent private keys never enter the browser ([06-threat-model.md](06-threat-model.md), [16-production-architecture.md](16-production-architecture.md)).
 
 ---
 
@@ -379,21 +379,20 @@ On approval, reuse the **existing** issuance path used by `POST /agents/register
 1. `api_key = generate_agent_api_key()` → `va_agent_...`
 2. `api_key_hash = hash_agent_api_key(api_key)`
 3. `register_agent(..., status="active", ...)`
-4. Set `registration_requests.approved_agent_did`, `status = approved`, review metadata
-5. Return `api_key` **once** — never on `GET /registration/requests/{id}` (see delivery options below)
+4. Store `pending_api_key` + `retrieval_token_hash` on the registration request
+5. Set `registration_requests.approved_agent_did`, `status = approved`, review metadata
+6. Return `retrieval_token` **once** to the admin — never return `api_key` from approve; never return either secret on `GET /registration/requests/{id}`
 
 ### Delivery (one-time only)
 
-`GET /registration/requests/{id}` returns status metadata only (`pending`, `approved`, `rejected`, `expired`, timestamps). It must **not** include `api_key`. Returning the key on poll would make `request_id` a long-lived bearer secret.
-
-Use one of these delivery paths:
+`GET /registration/requests/{id}` returns status metadata only. It must **not** include `api_key` or `retrieval_token`.
 
 | Path | Mechanism | Fit |
 | --- | --- | --- |
-| **A — Operator relay** | `POST .../approve` returns `api_key` in the **admin response only**; operator transmits to applicant via agreed secure channel | Simplest pilots; operator-mediated onboarding |
-| **B — One-time retrieval token** | On approval, server generates a separate `retrieval_token`, stores SHA-256 hash only, returns token once in admin response (or emails to `contact_email`). Applicant calls `POST .../credentials` with `X-VeriAgent-Retrieval-Token`; response returns `api_key` once; token invalidated | Self-service pilots without exposing key on status poll |
+| **Credential claim (standard)** | `POST .../approve` creates the agent, stores `pending_api_key`, returns `retrieval_token` once to the admin. Applicant calls `POST .../credentials` with a fresh ownership proof (optional `X-VeriAgent-Retrieval-Token`); response returns `api_key` once | Production self-service |
+| **Admin direct register** | `POST /agents/register` still returns `api_key` once | Break-glass / migrations only |
 
-### Admin approve response (includes key once)
+### Admin approve response (no API key)
 
 ```json
 {
@@ -405,12 +404,11 @@ Use one of these delivery paths:
   "public_key": "...",
   "agent_status": "active",
   "created_at": "...",
-  "api_key": "va_agent_...",
   "retrieval_token": "vrt_..."
 }
 ```
 
-`retrieval_token` is omitted when using operator relay only (Path A).
+The agent API key is issued only by `POST /registration/requests/{id}/credentials`.
 
 ### Applicant status poll (no secrets)
 
@@ -424,7 +422,7 @@ Use one of these delivery paths:
 }
 ```
 
-`credentials_available` indicates the applicant may use Path B if they hold the retrieval token; it does not reveal the key.
+`credentials_available` indicates the applicant may call `POST .../credentials` (with ownership proof) to retrieve the API key once; it does not reveal the key.
 
 ### Post-issuance
 
@@ -595,17 +593,16 @@ Phases 1–4 and 6 are sequential for the registration workflow. **Phase 5 (demo
 ### Phase 3 — Admin approval API (implemented)
 
 - `GET /registration/requests`, `POST .../approve`, `POST .../reject` behind `VERIAGENT_REGISTRATION_ENABLED` with admin key auth.
-- Approval calls existing `register_agent()` atomically; returns one-time `api_key` in admin response only.
+- Approval creates the agent, stores `pending_api_key`, and returns one-time `retrieval_token` (never `api_key` on approve).
+- `POST .../credentials` — applicant claims `api_key` once with a fresh ownership proof (optional retrieval-token header).
 - `GET .../{id}` returns status only — never `api_key`.
 - `expire_stale_requests()` marks overdue pending requests on proof, status, and admin reads.
-- **Not yet:** optional `POST .../credentials` for applicant self-fetch via retrieval token.
 - **Exit criteria:** Operator can approve proved request without using direct `/agents/register`; pilot onboarding doc validated.
 
-### Phase 4 — SDK and operator tooling
+### Phase 4 — SDK and operator tooling (partially implemented)
 
-- Python SDK helpers for request + proof.
-- Optional CLI or Makefile targets for operator queue review.
-- Email webhook or notification on new proved request (optional).
+- Python SDK/CLI helpers for request, prove, and claim (`veriagent register …`).
+- Optional email webhook or notification on new proved request (optional / not implemented).
 - **Exit criteria:** Pilot customer onboards without manual JSON crafting.
 
 ### Phase 5 — Demo mode (parallel track)
@@ -633,4 +630,4 @@ Phases 1–4 and 6 are sequential for the registration workflow. **Phase 5 (demo
 
 ---
 
-**Document status:** Registration workflow design · v1.0.0-RC1 baseline · design only, no code changes
+**Document status:** Registration workflow — implemented (request/proof/approve/claim). Demo mode remains design-only.

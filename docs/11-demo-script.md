@@ -1,8 +1,8 @@
 # VeriAgent Demo Script (60–90 seconds)
 
 **Audience:** Academic reviewer · Project partner · Proposal evaluator  
-**Format:** Live dashboard walkthrough or recorded screen capture  
-**Surface:** [Dashboard](https://dimikog.github.io/veriagent/) · [API](https://veriagent.dimikog.org) · [Blockscout](https://blockexplorer.dimikog.org/)
+**Format:** Live SPA walkthrough (Dashboard / Console) plus CLI submit, or recorded screen capture  
+**Surface:** [Dashboard](https://dimikog.github.io/veriagent/) · [API](https://veriagent.dimikog.org) · [Blockscout](https://blockexplorer.dimikog.org/) · Python CLI
 
 Speak at a steady pace (~140 words/min). Full delivery: ~2 minutes. Short version: ~60–90 seconds by trimming optional screen narration and presenter notes.
 
@@ -20,15 +20,15 @@ Speak at a steady pace (~140 words/min). Full delivery: ~2 minutes. Short versio
 
 > VeriAgent binds every audit record to a registered agent identity: an Ed25519 `did:key` and a per-agent API key. Only registered agents can submit events; the backend verifies both the Ed25519 signature and the agent API key binding on every ingestion.
 
-**[Screen]** Show agent credentials step (DID + API key). Mention keys are held client-side; the dashboard signs in-browser for demo only.
+**[Screen]** Show Register / Console unlock, or a terminal with `veriagent register claim` output (API key only). Emphasize: private keys stay on the agent host; the browser never signs.
 
 ---
 
 ## 3. Signed event
 
-> The agent builds a structured audit event—model, tool calls, input/output hashes, policy version—and signs it with Ed25519. The payload is canonicalized with RFC 8785 JCS so any party can reproduce the same bytes and hash.
+> The agent builds a structured audit event—model, tool calls, input/output hashes, policy version—and signs it with Ed25519 via the Python SDK/CLI. The payload is canonicalized with RFC 8785 JCS so any party can reproduce the same bytes and hash.
 
-**[Screen]** Click **Sign and submit** (or show pre-filled demo payload). Highlight `event_id`, `agent_id`, and signature fields.
+**[Screen]** Run `veriagent submit` (or show SDK snippet). Highlight `event_id`, `agent_id`, and signature fields in the response or Console list.
 
 ---
 
@@ -60,9 +60,9 @@ Speak at a steady pace (~140 words/min). Full delivery: ~2 minutes. Short versio
 
 ## 7. Verification
 
-> Anyone can verify independently—no admin access required. Fetch the event, recompute the hash, check the Merkle inclusion proof, and confirm the root on chain via public APIs or Blockscout.
+> Anyone can verify independently—no admin access required. Fetch the event, recompute the hash, check the Merkle inclusion proof, and confirm the root on chain via public APIs, Blockscout, or the offline CLI (`veriagent verify`).
 
-**[Screen]** Run verify step or `POST /audit/merkle/verify`. Green check = inclusion under the anchored root.
+**[Screen]** Run Dashboard verify steps or `veriagent verify`. Green check = inclusion under the anchored root.
 
 ---
 

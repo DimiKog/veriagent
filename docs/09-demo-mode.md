@@ -1,26 +1,25 @@
 # VeriAgent Demo Mode (Design)
 
 **Status:** Design only — not implemented.  
-**Target release context:** Post v1.0-RC1 (backend `1.0-pre` with auto batch/anchor scheduler and `GET /ops/status`).
+**Target release context:** Post v1.0.0-rc.1 (auto batch/anchor scheduler and `GET /ops/status`).
 
-This document proposes a **safe demo mode** that makes VeriAgent easier to try on the public dashboard without exposing admin secrets in the browser or reusing production agent credentials.
+This document proposes a **safe demo mode** that makes VeriAgent easier to try on the public SPA without exposing admin secrets in the browser or requiring a full registration approval cycle for casual visitors.
+
+**Current production path (implemented):** Register page (public identity only) → CLI `veriagent register prove` → Admin approve → CLI `veriagent register claim` → CLI/SDK submit. The browser never holds agent private keys. See [16-production-architecture.md](16-production-architecture.md) and [17-first-run-guide.md](17-first-run-guide.md).
 
 ---
 
 ## 1. Problem
 
-The current public demo workflow has a high friction bar:
+The current public try-out workflow still has friction for casual visitors:
 
-1. **Manual agent registration** — An operator must call `POST /agents/register` via Swagger, curl, or internal tooling with `X-VeriAgent-Admin-Key`. Casual visitors cannot self-serve.
-2. **Credential juggling** — The user must obtain and paste three separate values into the dashboard:
-   - Agent DID (`did:key:z...`)
-   - Agent API key (`va_agent_...`, shown once at registration)
-   - Ed25519 private key (base64 seed, for browser signing)
-3. **No guided path** — The dashboard explains credentials but does not create them. Users who miss the registration step cannot submit events.
-4. **Confusion with production** — The same registration path is used for demo and production agents. There is no explicit `demo` vs `production` separation in the registry.
+1. **Registration approval** — Public create/proof exists, but an operator must approve before credentials can be claimed.
+2. **CLI required for crypto** — Applicants must run `veriagent register prove|claim` and `veriagent submit` with a private key file (by design — no browser signing).
+3. **No guided one-click path** — The SPA explains the flow but does not mint short-lived demo agents automatically.
+4. **Confusion with production** — Without an explicit `demo` vs `production` agent class, operators must rely on process.
 5. **Batch/anchor gap (partially addressed)** — Manual batch/anchor still requires an admin key. Server-side **automatic batching/anchoring** (v1.0-pre) helps operators but does not simplify agent onboarding for demo users.
 
-The dashboard correctly **never** holds admin keys. The missing piece is a **public, bounded, demo-only registration path** that preserves that invariant.
+The SPA correctly **never** holds admin keys or agent private keys. A future demo mode would add a **public, bounded, demo-only registration path** that preserves those invariants (for example short-lived keys issued out-of-band or via a constrained API — not browser keygen in production surfaces).
 
 ---
 
@@ -28,9 +27,10 @@ The dashboard correctly **never** holds admin keys. The missing piece is a **pub
 
 | Goal | Rationale |
 | --- | --- |
-| **Easy public demo** | A visitor can go from zero to a signed, stored event in one UI flow. |
+| **Easy public demo** | A visitor can go from zero to a signed, stored event with minimal friction. |
 | **No admin key in browser** | Admin registration stays server-side or operator-only; the public frontend must not request or store `VERIAGENT_ADMIN_API_KEY`. |
-| **No production private keys** | Demo keys are ephemeral, generated in the browser, and never reused from operator key material (`scripts/demo_agent.env`, VM secrets). |
+| **No agent private keys in the SPA** | Matches production crypto rule ([16-production-architecture.md](16-production-architecture.md)): the browser never holds agent private keys. Demo onboarding must hand keys to the CLI/SDK (download / `~/.veriagent/`), not sign in-page. |
+| **No production private keys** | Demo keys are ephemeral and never reused from operator key material (`scripts/demo_agent.env`, VM secrets). |
 | **Clear separation from production** | Demo agents are labeled, rate-limited, short-lived, and visually distinguished in the UI. |
 | **Same verifiable pipeline** | Demo events use the same canonicalization, signing, Merkle batching, and Besu anchoring as production—only onboarding differs. |
 | **Safe by default** | Demo mode is **off** unless explicitly enabled on the API host. |
@@ -39,45 +39,41 @@ The dashboard correctly **never** holds admin keys. The missing piece is a **pub
 
 ## 3. Proposed flow
 
-End-to-end demo journey (happy path):
+> **Crypto boundary:** Any demo-mode implementation must preserve the production rule that the **SPA never holds agent private keys**. The sketch below is a design proposal; prefer CLI/SDK signing (same as today’s Register → prove → claim → submit path) over in-browser signing.
+
+End-to-end demo journey (happy path — preferred):
 
 ```text
-User opens public dashboard
+User opens public Register / Demo entry
         ↓
-Clicks "Generate demo agent"
+Clicks "Create demo agent" (or equivalent)
         ↓
-Browser generates Ed25519 keypair (in memory)
+Backend (or guided CLI) creates short-lived demo agent + API key
         ↓
-Browser derives did:key + verification_method
+User downloads / saves key material to ~/.veriagent/ (not browser memory)
         ↓
-POST /demo/agents  { public_key, agent_did, verification_method, ... }
-        ↓
-Backend validates binding, creates agent (status=demo, expires_at=...)
-        ↓
-Returns va_agent_... API key once (+ agent_did, expires_at)
-        ↓
-Frontend holds private key + API key in React state only
-        ↓
-User builds audit event → signs in browser → POST /audit/events
+veriagent submit (or SDK) signs locally → POST /audit/events
         ↓
 Backend verifies signature + API key → stores event → HMAC receipt
         ↓
 Auto scheduler (if enabled) batches + anchors on interval
         ↓
-User views batch/proof/anchor via public read APIs or dashboard steps
+User views batch/proof/anchor via Dashboard / Console (read-only)
 ```
+
+**Historical sketch (not current production):** early designs considered generating an Ed25519 keypair in the browser and signing demo events in-page. That approach is **rejected for production surfaces** and should not be revived without an explicit, separate sandbox product decision.
 
 **User-visible steps (simplified UI):**
 
-1. **Generate demo agent** — One click; no Swagger, no admin key, no pasted secrets from an operator.
-2. **Create signed event** — Pre-filled demo payload; sign and submit.
-3. **Watch the chain** — Poll `GET /ops/status` or dashboard sidebar for `last_status`, `last_batch_id`, `last_anchor_tx`; link to Blockscout when anchored.
+1. **Create demo agent** — One click or short CLI; no Swagger, no admin key, no pasted operator secrets.
+2. **Submit signed event** — Via `veriagent submit` / SDK with a pre-filled demo payload.
+3. **Watch the chain** — Dashboard/Console lifecycle + `GET /ops/status`; link to Blockscout when anchored.
 
 **Explicit non-steps for demo users:**
 
 - No manual `POST /agents/register` with admin key.
 - No manual `POST /audit/batches` or `POST .../anchor`.
-- No persistence of private keys to `localStorage` / `sessionStorage`.
+- No agent private keys in the browser (React state, `localStorage`, or `sessionStorage`).
 
 ---
 
@@ -183,7 +179,7 @@ Production deployments should leave demo mode **off** on operator/production API
 
 When demo mode is active, display a persistent banner, for example:
 
-> **Demo mode** — Ephemeral agent credentials. Keys exist only in this browser tab. Not for production or sensitive data.
+> **Demo mode** — Ephemeral agent credentials. Store keys under `~/.veriagent/` (or equivalent); the SPA does not hold private keys. Not for production or sensitive data.
 
 ### Ops visibility
 
@@ -224,7 +220,7 @@ Demo mode is not production onboarding. A future production path should include:
 | **Verifiable Credentials** | Optional VC attesting organization or agent class; VC verified before issuing `active` status and API key. |
 | **Active agent issuance** | Admin or automated approver calls internal registration; `status=active`, no short TTL. |
 
-Production agents would use the **Python SDK** or agent runtime for signing—not browser demo key generation.
+Production agents use the **Python SDK/CLI** for signing—not browser key generation.
 
 See [08-architecture.md](08-architecture.md) §10–11 for current limitations and roadmap.
 
@@ -254,14 +250,14 @@ See [08-architecture.md](08-architecture.md) §10–11 for current limitations a
 
 ---
 
-### Phase 3 — Frontend demo button
+### Phase 3 — Frontend demo entry + CLI submit
 
-- Replace manual credential paste with **Generate demo agent** (keygen + `POST /demo/agents`).
-- Keep private key and API key in memory only; show expiry and demo banner.
-- Simplify step 2/3 of dashboard workflow; rely on auto scheduler for batch/anchor visibility.
-- Optional: poll `/ops/status` for anchor progress instead of manual batch/anchor buttons.
+- Add a **Create demo agent** entry that provisions a short-lived agent without admin key paste.
+- Hand credentials to the user for `~/.veriagent/` / CLI use — **do not** hold agent private keys in the SPA.
+- Rely on Dashboard/Console for lifecycle observation; rely on auto scheduler for batch/anchor visibility.
+- Optional: poll `/ops/status` for anchor progress.
 
-**Exit criteria:** Public dashboard E2E without Swagger or admin key; documented in [frontend/README.md](../frontend/README.md).
+**Exit criteria:** Public demo E2E without Swagger or admin key; documented in [frontend/README.md](../frontend/README.md) and aligned with [16-production-architecture.md](16-production-architecture.md).
 
 ---
 

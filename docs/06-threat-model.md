@@ -71,15 +71,12 @@ Partially implemented (v0.9.2):
 - Real Ed25519 `did:key` multibase encoding (`did:key:z...`); legacy `did:key:demo:...` is deprecated.
 - `public_key` and `verification_method` validated against `agent_did` at registration.
 
-Partially implemented (v0.9.3):
-- Dashboard browser-side Ed25519 signing for **demo** audit events only; demo private key kept in React state (not persisted). Production agents should sign outside the browser.
-
-Partially implemented (v0.9.4):
-- **Python Agent SDK** (`sdk/python/veriagent/`) for production-style signed event submission: Ed25519 `did:key` derivation, RFC 8785 / JCS canonicalization, signing, and `POST /audit/events` with `X-VeriAgent-API-Key`. Admin registration not included in the SDK yet.
+Partially implemented (v0.9.4+):
+- **Python Agent SDK / CLI** (`sdk/python/`) for production signed event submission and registration prove/claim: Ed25519 `did:key` derivation, RFC 8785 / JCS canonicalization, signing, and `POST /audit/events` with `X-VeriAgent-API-Key`. The browser never holds agent private keys ([16-production-architecture.md](16-production-architecture.md)).
 
 Not yet implemented:
 - DID resolution over the network (`did:key` does not support key rotation by itself; revocation/status is via VeriAgent's internal registry).
-- SDK admin registration, async client, TypeScript SDK.
+- SDK admin registration helpers, async client, TypeScript SDK.
 
 ## v0.9.6 (partial)
 

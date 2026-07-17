@@ -54,6 +54,16 @@ class VeriAgentClient:
             metadata=metadata,
         )
 
+    def submit_signed_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        response = httpx.post(
+            f"{self.api_base_url}/audit/events",
+            json=payload,
+            headers={"X-VeriAgent-API-Key": self.agent_api_key},
+            timeout=30.0,
+        )
+        response.raise_for_status()
+        return response.json()
+
     def submit_event(
         self,
         event_id: str,
@@ -77,11 +87,4 @@ class VeriAgentClient:
             timestamp=timestamp,
             metadata=metadata,
         )
-        response = httpx.post(
-            f"{self.api_base_url}/audit/events",
-            json=payload,
-            headers={"X-VeriAgent-API-Key": self.agent_api_key},
-            timeout=30.0,
-        )
-        response.raise_for_status()
-        return response.json()
+        return self.submit_signed_payload(payload)
