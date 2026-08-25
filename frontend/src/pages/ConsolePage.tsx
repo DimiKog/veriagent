@@ -21,6 +21,12 @@ import {
   lifecyclePhaseFromStatus,
   workflowPatchFromLifecycle,
 } from '../lib/format'
+import { isUnauthorizedError } from '../lib/authErrors'
+import {
+  clearAgentDevAuthKey,
+  readAgentDevAuthKey,
+  writeAgentDevAuthKey,
+} from '../lib/devAuthStorage'
 import type {
   AgentAuditEventSummary,
   EventLifecycleStatusResponse,
@@ -30,19 +36,14 @@ import type {
 } from '../types'
 import { emptyWorkflowState } from '../types'
 
-const AGENT_API_KEY_STORAGE = 'veriagent_agent_api_key'
-
 function loadStoredApiKey(): string {
-  try {
-    return sessionStorage.getItem(AGENT_API_KEY_STORAGE) ?? ''
-  } catch {
-    return ''
-  }
+  return readAgentDevAuthKey()
 }
 
 export function ConsolePage() {
   const [apiKeyInput, setApiKeyInput] = useState(loadStoredApiKey)
   const [sessionKey, setSessionKey] = useState(loadStoredApiKey)
+  const [sessionVerified, setSessionVerified] = useState(false)
   const [events, setEvents] = useState<AgentAuditEventSummary[]>([])
   const [listStatus, setListStatus] = useState<SectionStatus>(() =>
     loadStoredApiKey()
@@ -84,32 +85,50 @@ export function ConsolePage() {
     Boolean(trackedEventId || workflow.event_id),
   )
 
-  const refreshEvents = useCallback(async (key: string) => {
-    if (!key.trim()) return
-    setListStatus({ kind: 'loading', message: 'Loading agent events…' })
-    try {
-      const data = await listAgentEvents(key.trim())
-      setEvents(data.events)
-      setListStatus({
-        kind: 'success',
-        message: `Loaded ${data.events.length} event(s).`,
-      })
-    } catch (error) {
-      setEvents([])
-      setListStatus({ kind: 'error', message: errorMessage(error) })
-    }
-  }, [])
+  const refreshEvents = useCallback(
+    async (key: string) => {
+      const resolvedKey = key.trim() || readAgentDevAuthKey().trim()
+      if (!resolvedKey) return
+      setListStatus({ kind: 'loading', message: 'Loading agent events…' })
+      try {
+        const data = await listAgentEvents(resolvedKey)
+        setSessionVerified(true)
+        setEvents(data.events)
+        setListStatus({
+          kind: 'success',
+          message: `Loaded ${data.events.length} event(s).`,
+        })
+      } catch (error) {
+        setEvents([])
+        if (isUnauthorizedError(error)) {
+          clearAgentDevAuthKey()
+          setSessionKey('')
+          setApiKeyInput('')
+          setSessionVerified(false)
+          setListStatus({
+            kind: 'error',
+            message:
+              'Agent API key rejected by the server. Paste your agent key again to continue.',
+          })
+          return
+        }
+        setListStatus({ kind: 'error', message: errorMessage(error) })
+      }
+    },
+    [],
+  )
 
   useEffect(() => {
     if (!sessionKey) return
 
     let cancelled = false
-    const key = sessionKey.trim()
+    const key = readAgentDevAuthKey().trim() || sessionKey.trim()
 
     async function loadEvents() {
       try {
         const data = await listAgentEvents(key)
         if (cancelled) return
+        setSessionVerified(true)
         setEvents(data.events)
         setListStatus({
           kind: 'success',
@@ -118,6 +137,18 @@ export function ConsolePage() {
       } catch (error) {
         if (cancelled) return
         setEvents([])
+        if (isUnauthorizedError(error)) {
+          clearAgentDevAuthKey()
+          setSessionKey('')
+          setApiKeyInput('')
+          setSessionVerified(false)
+          setListStatus({
+            kind: 'error',
+            message:
+              'Stored agent API key is invalid. Paste your agent key again to continue.',
+          })
+          return
+        }
         setListStatus({ kind: 'error', message: errorMessage(error) })
       }
     }
@@ -128,30 +159,43 @@ export function ConsolePage() {
     }
   }, [sessionKey])
 
-  const handleSaveSession = (e: FormEvent) => {
+  const handleSaveSession = async (e: FormEvent) => {
     e.preventDefault()
     const key = apiKeyInput.trim()
     if (!key) {
       setListStatus({ kind: 'error', message: 'Paste an agent API key to continue.' })
       return
     }
+    setListStatus({ kind: 'loading', message: 'Validating agent API key…' })
     try {
-      sessionStorage.setItem(AGENT_API_KEY_STORAGE, key)
-    } catch {
-      // sessionStorage may be unavailable
+      const data = await listAgentEvents(key)
+      writeAgentDevAuthKey(key)
+      setSessionKey(key)
+      setSessionVerified(true)
+      setEvents(data.events)
+      setListStatus({
+        kind: 'success',
+        message: `Loaded ${data.events.length} event(s).`,
+      })
+    } catch (error) {
+      clearAgentDevAuthKey()
+      setSessionKey('')
+      setSessionVerified(false)
+      setEvents([])
+      setListStatus({
+        kind: 'error',
+        message: isUnauthorizedError(error)
+          ? 'Agent API key rejected by the server. Check the key from register claim.'
+          : errorMessage(error),
+      })
     }
-    setListStatus({ kind: 'loading', message: 'Loading agent events…' })
-    setSessionKey(key)
   }
 
   const handleClearSession = () => {
-    try {
-      sessionStorage.removeItem(AGENT_API_KEY_STORAGE)
-    } catch {
-      // ignore
-    }
+    clearAgentDevAuthKey()
     setSessionKey('')
     setApiKeyInput('')
+    setSessionVerified(false)
     setEvents([])
     setListStatus({ kind: 'idle' })
   }
@@ -301,7 +345,22 @@ client.submit_event(
     policy_version="policy-v0.1",
 )`
 
-  if (!sessionKey) {
+  const validatingStoredSession =
+    Boolean(sessionKey) && !sessionVerified && listStatus.kind === 'loading'
+
+  if (validatingStoredSession) {
+    return (
+      <div className="page page--narrow">
+        <section className="panel">
+          <h2 className="panel__heading">Operator console</h2>
+          <p className="panel__helper">Checking stored agent API key against the backend…</p>
+          <StatusBox status={{ kind: 'loading', message: 'Validating agent credentials…' }} />
+        </section>
+      </div>
+    )
+  }
+
+  if (!sessionKey || !sessionVerified) {
     return (
       <div className="page page--narrow">
         <CryptoBoundaryNote />
@@ -366,10 +425,11 @@ client.submit_event(
         <section className="panel">
           <h2 className="panel__heading">
             Session
-            <span className="badge badge--ok">API key active</span>
+            <span className="badge badge--ok">Verified</span>
           </h2>
           <p className="panel__helper">
-            Authenticated with <code>X-VeriAgent-API-Key</code>. No private keys in the browser.
+            Agent API key validated by the backend (<code>X-VeriAgent-API-Key</code>). No private
+            keys in the browser.
           </p>
           <div className="panel__actions">
             <button

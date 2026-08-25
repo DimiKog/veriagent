@@ -144,6 +144,20 @@ class StoredBatchAnchor:
     chain_id: int
 
 
+PENDING_ANCHOR_STATUSES = ("submitted", "confirmed", "failed")
+
+
+@dataclass(frozen=True)
+class StoredPendingAnchorTransaction:
+    batch_id: str
+    tx_hash: str
+    status: str
+    submitted_at: str
+    last_error: str | None = None
+    block_number: int | None = None
+    confirmed_at: str | None = None
+
+
 @dataclass(frozen=True)
 class StoredEventLifecycleStatus:
     event_id: str
@@ -249,6 +263,22 @@ def init_db(db_path: Path | str | None = None) -> None:
                 anchored_at INTEGER NOT NULL,
                 anchored_by TEXT NOT NULL,
                 chain_id INTEGER NOT NULL,
+                FOREIGN KEY (batch_id) REFERENCES audit_batches(batch_id)
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS pending_anchor_transactions (
+                batch_id TEXT PRIMARY KEY,
+                tx_hash TEXT NOT NULL,
+                status TEXT NOT NULL CHECK (
+                    status IN ('submitted', 'confirmed', 'failed')
+                ),
+                submitted_at TEXT NOT NULL,
+                last_error TEXT,
+                block_number INTEGER,
+                confirmed_at TEXT,
                 FOREIGN KEY (batch_id) REFERENCES audit_batches(batch_id)
             )
             """
@@ -488,6 +518,43 @@ def list_unbatched_events(db_path: Path | str | None = None) -> list[StoredAudit
     return [_stored_audit_event_from_row(row) for row in rows]
 
 
+def list_unanchored_batches(db_path: Path | str | None = None) -> list[StoredBatch]:
+    """Return local batches that have no batch_anchors row (oldest first)."""
+    init_db(db_path)
+    with _connect(db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT b.batch_id, b.merkle_root, b.event_count, b.created_at
+            FROM audit_batches b
+            LEFT JOIN batch_anchors ba ON b.batch_id = ba.batch_id
+            WHERE ba.batch_id IS NULL
+            ORDER BY b.created_at ASC, b.batch_id ASC
+            """
+        ).fetchall()
+
+        batches: list[StoredBatch] = []
+        for row in rows:
+            leaf_rows = conn.execute(
+                """
+                SELECT event_hash
+                FROM batch_events
+                WHERE batch_id = ?
+                ORDER BY leaf_index ASC
+                """,
+                (row["batch_id"],),
+            ).fetchall()
+            batches.append(
+                StoredBatch(
+                    batch_id=row["batch_id"],
+                    merkle_root=row["merkle_root"],
+                    event_count=row["event_count"],
+                    created_at=row["created_at"],
+                    event_hashes=[leaf["event_hash"] for leaf in leaf_rows],
+                )
+            )
+    return batches
+
+
 def list_audit_events_for_agent(
     agent_did: str,
     limit: int = 50,
@@ -706,6 +773,107 @@ def get_batch_anchor(
         anchored_at=row["anchored_at"],
         anchored_by=row["anchored_by"],
         chain_id=row["chain_id"],
+    )
+
+
+def upsert_pending_anchor_transaction(
+    *,
+    batch_id: str,
+    tx_hash: str,
+    status: str,
+    submitted_at: str | None = None,
+    last_error: str | None = None,
+    block_number: int | None = None,
+    confirmed_at: str | None = None,
+    db_path: Path | str | None = None,
+) -> StoredPendingAnchorTransaction:
+    if status not in PENDING_ANCHOR_STATUSES:
+        raise ValueError(f"Invalid pending anchor status: {status!r}")
+
+    init_db(db_path)
+    now = submitted_at or datetime.now(timezone.utc).isoformat()
+    with _connect(db_path) as conn:
+        existing = conn.execute(
+            """
+            SELECT submitted_at FROM pending_anchor_transactions WHERE batch_id = ?
+            """,
+            (batch_id,),
+        ).fetchone()
+        effective_submitted_at = existing["submitted_at"] if existing else now
+        conn.execute(
+            """
+            INSERT INTO pending_anchor_transactions (
+                batch_id,
+                tx_hash,
+                status,
+                submitted_at,
+                last_error,
+                block_number,
+                confirmed_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(batch_id) DO UPDATE SET
+                tx_hash = excluded.tx_hash,
+                status = excluded.status,
+                last_error = excluded.last_error,
+                block_number = excluded.block_number,
+                confirmed_at = excluded.confirmed_at
+            """,
+            (
+                batch_id,
+                tx_hash,
+                status,
+                effective_submitted_at,
+                last_error,
+                block_number,
+                confirmed_at,
+            ),
+        )
+        conn.commit()
+
+    return StoredPendingAnchorTransaction(
+        batch_id=batch_id,
+        tx_hash=tx_hash,
+        status=status,
+        submitted_at=effective_submitted_at,
+        last_error=last_error,
+        block_number=block_number,
+        confirmed_at=confirmed_at,
+    )
+
+
+def get_pending_anchor_transaction(
+    batch_id: str,
+    db_path: Path | str | None = None,
+) -> StoredPendingAnchorTransaction | None:
+    init_db(db_path)
+    with _connect(db_path) as conn:
+        row = conn.execute(
+            """
+            SELECT
+                batch_id,
+                tx_hash,
+                status,
+                submitted_at,
+                last_error,
+                block_number,
+                confirmed_at
+            FROM pending_anchor_transactions
+            WHERE batch_id = ?
+            """,
+            (batch_id,),
+        ).fetchone()
+
+    if row is None:
+        return None
+
+    return StoredPendingAnchorTransaction(
+        batch_id=row["batch_id"],
+        tx_hash=row["tx_hash"],
+        status=row["status"],
+        submitted_at=row["submitted_at"],
+        last_error=row["last_error"],
+        block_number=row["block_number"],
+        confirmed_at=row["confirmed_at"],
     )
 
 

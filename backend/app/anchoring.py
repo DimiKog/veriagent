@@ -44,6 +44,22 @@ class AnchorTransactionFailedError(Exception):
     """Raised when an anchor transaction receipt indicates failure or revert."""
 
 
+class AnchorMetadataMismatchError(Exception):
+    """Raised when on-chain batch metadata does not match the local batch."""
+
+
+class AnchorReconciliationError(Exception):
+    """Raised when an on-chain anchor cannot be reconciled into a local record."""
+
+
+class AnchorReceiptPendingError(Exception):
+    """Raised when a submitted anchor transaction receipt is not yet available."""
+
+    def __init__(self, tx_hash: str, message: str):
+        self.tx_hash = tx_hash
+        super().__init__(message)
+
+
 @dataclass(frozen=True)
 class AnchoringConfig:
     rpc_url: str
@@ -59,6 +75,20 @@ class OnchainBatch:
     metadata_hash: bytes
     anchored_at: int
     anchored_by: ChecksumAddress
+
+
+@dataclass(frozen=True)
+class BatchAnchoredLog:
+    """Recovered BatchAnchored event with its originating transaction."""
+
+    batch_id_bytes: bytes
+    merkle_root: bytes
+    event_count: int
+    metadata_hash: bytes
+    anchored_at: int
+    anchored_by: ChecksumAddress
+    tx_hash: str
+    block_number: int
 
 
 def _coerce_bytes32(value: Any) -> bytes:
@@ -347,6 +377,99 @@ def is_batch_anchored(
     return bool(contract.functions.isAnchored(batch_id_bytes).call())
 
 
+def find_batch_anchored_log(
+    batch_id: str,
+    *,
+    from_block: int | str = 0,
+    to_block: "BlockIdentifier" = "latest",
+    config: AnchoringConfig | None = None,
+    chunk_size: int = 2_000,
+) -> BatchAnchoredLog | None:
+    """Locate the BatchAnchored log for a batch via indexed batchId topic.
+
+    Uses eth_getLogs / contract event filters in block-range chunks so providers
+    with max-range limits still work.
+
+    Integrity rules (full scanned range):
+    - zero matches → return None
+    - exactly one match → return that log
+    - more than one match → raise AnchorReconciliationError
+
+    Does not fabricate hashes and does not silently pick newest/oldest.
+    """
+    cfg = config or load_anchoring_config()
+    web3 = _get_web3(cfg)
+    contract = get_anchor_contract(web3, cfg)
+    batch_id_bytes = batch_id_to_bytes32(batch_id)
+
+    latest = web3.eth.block_number
+    start = int(from_block) if from_block != "latest" else latest
+    end = latest if to_block == "latest" else int(to_block)
+    if start < 0:
+        start = 0
+    if end < start:
+        return None
+
+    matches: list[Any] = []
+    # Newest-first only for RPC efficiency; still scans the entire range and
+    # refuses reconciliation if more than one match appears anywhere.
+    chunk_end = end
+    active_chunk = chunk_size
+    while chunk_end >= start:
+        chunk_start = max(start, chunk_end - active_chunk + 1)
+        try:
+            events = contract.events.BatchAnchored.get_logs(
+                argument_filters={"batchId": batch_id_bytes},
+                from_block=chunk_start,
+                to_block=chunk_end,
+            )
+        except Exception:
+            if active_chunk <= 100:
+                raise
+            active_chunk = max(100, active_chunk // 2)
+            continue
+
+        matches.extend(events)
+        if len(matches) > 1:
+            raise AnchorReconciliationError(
+                f"Multiple BatchAnchored events found for batch {batch_id} "
+                f"(count={len(matches)}); refusing reconciliation"
+            )
+        if chunk_start == start:
+            break
+        chunk_end = chunk_start - 1
+
+    if not matches:
+        return None
+
+    if len(matches) != 1:
+        raise AnchorReconciliationError(
+            f"Multiple BatchAnchored events found for batch {batch_id} "
+            f"(count={len(matches)}); refusing reconciliation"
+        )
+
+    event = matches[0]
+    args = event["args"]
+    tx_hash = event["transactionHash"]
+    if hasattr(tx_hash, "hex"):
+        tx_hash_hex = tx_hash.hex()
+    else:
+        tx_hash_hex = str(tx_hash)
+    if not tx_hash_hex.startswith("0x"):
+        tx_hash_hex = f"0x{tx_hash_hex}"
+
+    return BatchAnchoredLog(
+        batch_id_bytes=bytes(args["batchId"]),
+        merkle_root=_coerce_bytes32(args["merkleRoot"]),
+        event_count=int(args["eventCount"]),
+        metadata_hash=_coerce_bytes32(args["metadataHash"]),
+        anchored_at=int(args["anchoredAt"]),
+        anchored_by=to_checksum_address(args["anchoredBy"]),
+        tx_hash=tx_hash_hex,
+        block_number=int(event["blockNumber"]),
+    )
+
+
 def _receipt_status(receipt: dict[str, Any]) -> int:
     status = receipt.get("status")
     if status is None:
@@ -358,12 +481,24 @@ def wait_for_transaction_receipt(
     tx_hash: str,
     *,
     config: AnchoringConfig | None = None,
+    timeout: float | None = 120,
 ) -> dict[str, Any]:
     """Wait for a submitted anchor transaction and return the receipt dict."""
     cfg = config or load_anchoring_config()
     web3 = _get_web3(cfg)
     normalized = tx_hash if tx_hash.startswith("0x") else f"0x{tx_hash}"
-    receipt = dict(web3.eth.wait_for_transaction_receipt(normalized))
+    try:
+        wait_kwargs: dict[str, Any] = {}
+        if timeout is not None:
+            wait_kwargs["timeout"] = timeout
+        receipt = dict(web3.eth.wait_for_transaction_receipt(normalized, **wait_kwargs))
+    except AnchorTransactionFailedError:
+        raise
+    except Exception as exc:
+        raise AnchorReceiptPendingError(
+            normalized,
+            f"Anchor transaction receipt not yet available: tx_hash={normalized}: {exc}",
+        ) from exc
     if _receipt_status(receipt) == 0:
         raise AnchorTransactionFailedError(
             f"Anchor transaction reverted (status=0): tx_hash={normalized}"

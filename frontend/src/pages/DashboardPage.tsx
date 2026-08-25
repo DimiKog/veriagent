@@ -20,7 +20,9 @@ import {
   lifecyclePhaseFromStatus,
   workflowPatchFromLifecycle,
 } from '../lib/format'
+import { downloadJsonFile } from '../lib/downloadJson'
 import type {
+  BatchAnchorRecord,
   BatchProofResponse,
   BatchResponse,
   EventLifecycleStatusResponse,
@@ -36,6 +38,8 @@ export function DashboardPage() {
   const [evidenceBatchId, setEvidenceBatchId] = useState('')
   const [evidenceEventId, setEvidenceEventId] = useState('')
   const [lastProof, setLastProof] = useState<MerkleProofStep[]>([])
+  const [lastProofResponse, setLastProofResponse] = useState<BatchProofResponse | null>(null)
+  const [lastAnchorResponse, setLastAnchorResponse] = useState<BatchAnchorRecord | null>(null)
   const [evidenceBatchStatus, setEvidenceBatchStatus] = useState<SectionStatus>({
     kind: 'idle',
   })
@@ -119,6 +123,7 @@ export function DashboardPage() {
     try {
       const data: BatchProofResponse = await getBatchProof(batchId, eventId)
       setLastProof(data.proof)
+      setLastProofResponse(data)
       setWorkflow((current) => ({
         ...current,
         batch_id: data.batch_id,
@@ -159,6 +164,7 @@ export function DashboardPage() {
     setEvidenceAnchorStatus({ kind: 'loading', message: 'Fetching anchor record…' })
     try {
       const data = await getBatchAnchor(batchId)
+      setLastAnchorResponse(data)
       setWorkflow((current) => ({
         ...current,
         batch_id: data.batch_id,
@@ -325,6 +331,29 @@ export function DashboardPage() {
               Cached proof steps:{' '}
               <span className="badge badge--ok">{lastProof.length}</span>
             </p>
+          )}
+
+          {(lastProofResponse || lastAnchorResponse) && (
+            <div className="panel__actions" style={{ marginTop: '0.75rem' }}>
+              {lastProofResponse && (
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => downloadJsonFile(lastProofResponse, 'proof.json')}
+                >
+                  Download proof JSON
+                </button>
+              )}
+              {lastAnchorResponse && (
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => downloadJsonFile(lastAnchorResponse, 'anchor.json')}
+                >
+                  Download anchor JSON
+                </button>
+              )}
+            </div>
           )}
 
           <StatusBox status={lifecycleFetchStatus} />

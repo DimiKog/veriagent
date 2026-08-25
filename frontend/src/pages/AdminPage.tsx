@@ -9,25 +9,26 @@ import { CryptoBoundaryNote, DevAuthBanner } from '../components/ArchitectureNot
 import { HashValue } from '../components/HashValue'
 import { StatusBox } from '../components/StatusBox'
 import { errorMessage } from '../lib/format'
+import { isUnauthorizedError } from '../lib/authErrors'
+import {
+  clearAdminDevAuthKey,
+  readAdminDevAuthKey,
+  writeAdminDevAuthKey,
+} from '../lib/devAuthStorage'
 import type {
   AdminRegistrationRequestSummary,
   OpsStatusResponse,
   SectionStatus,
 } from '../types'
 
-const ADMIN_KEY_STORAGE = 'veriagent_admin_key'
-
 function loadStoredAdminKey(): string {
-  try {
-    return sessionStorage.getItem(ADMIN_KEY_STORAGE) ?? ''
-  } catch {
-    return ''
-  }
+  return readAdminDevAuthKey()
 }
 
 export function AdminPage() {
   const [adminKeyInput, setAdminKeyInput] = useState(loadStoredAdminKey)
   const [sessionKey, setSessionKey] = useState(loadStoredAdminKey)
+  const [sessionVerified, setSessionVerified] = useState(false)
   const [requests, setRequests] = useState<AdminRegistrationRequestSummary[]>([])
   const [queueStatus, setQueueStatus] = useState<SectionStatus>(() =>
     loadStoredAdminKey()
@@ -43,21 +44,44 @@ export function AdminPage() {
   )
   const [opsData, setOpsData] = useState<OpsStatusResponse | null>(null)
 
-  const refreshQueue = useCallback(async (key: string) => {
-    if (!key.trim()) return
-    setQueueStatus({ kind: 'loading', message: 'Loading pending registration requests…' })
-    try {
-      const data = await listRegistrationRequests(key.trim(), 'pending')
-      setRequests(data.requests)
-      setQueueStatus({
-        kind: 'success',
-        message: `${data.requests.length} pending request(s).`,
-      })
-    } catch (error) {
-      setRequests([])
-      setQueueStatus({ kind: 'error', message: errorMessage(error) })
-    }
+  const invalidateSession = useCallback((message: string) => {
+    clearAdminDevAuthKey()
+    setSessionKey('')
+    setAdminKeyInput('')
+    setSessionVerified(false)
+    setRequests([])
+    setQueueStatus({ kind: 'error', message })
+    setActionStatus({ kind: 'idle' })
+    setOpsData(null)
+    setOpsStatus({ kind: 'idle' })
   }, [])
+
+  const refreshQueue = useCallback(
+    async (key: string) => {
+      const resolvedKey = key.trim() || readAdminDevAuthKey().trim()
+      if (!resolvedKey) return
+      setQueueStatus({ kind: 'loading', message: 'Loading pending registration requests…' })
+      try {
+        const data = await listRegistrationRequests(resolvedKey, 'pending')
+        setSessionVerified(true)
+        setRequests(data.requests)
+        setQueueStatus({
+          kind: 'success',
+          message: `${data.requests.length} pending request(s).`,
+        })
+      } catch (error) {
+        setRequests([])
+        if (isUnauthorizedError(error)) {
+          invalidateSession(
+            'Admin key rejected by the server. Unlock again with your admin API key.',
+          )
+          return
+        }
+        setQueueStatus({ kind: 'error', message: errorMessage(error) })
+      }
+    },
+    [invalidateSession],
+  )
 
   const refreshOps = useCallback(async () => {
     setOpsStatus({ kind: 'loading', message: 'Loading ops status…' })
@@ -78,12 +102,13 @@ export function AdminPage() {
     if (!sessionKey) return
 
     let cancelled = false
-    const key = sessionKey.trim()
+    const key = readAdminDevAuthKey().trim() || sessionKey.trim()
 
     async function loadQueue() {
       try {
         const data = await listRegistrationRequests(key, 'pending')
         if (cancelled) return
+        setSessionVerified(true)
         setRequests(data.requests)
         setQueueStatus({
           kind: 'success',
@@ -92,6 +117,12 @@ export function AdminPage() {
       } catch (error) {
         if (cancelled) return
         setRequests([])
+        if (isUnauthorizedError(error)) {
+          invalidateSession(
+            'Stored admin key is invalid or was replaced. Unlock again with your admin API key.',
+          )
+          return
+        }
         setQueueStatus({ kind: 'error', message: errorMessage(error) })
       }
     }
@@ -117,36 +148,62 @@ export function AdminPage() {
     return () => {
       cancelled = true
     }
-  }, [sessionKey])
+  }, [sessionKey, invalidateSession])
 
-  const handleSaveSession = (e: FormEvent) => {
+  const handleSaveSession = async (e: FormEvent) => {
     e.preventDefault()
     const key = adminKeyInput.trim()
     if (!key) {
       setQueueStatus({ kind: 'error', message: 'Enter an admin key to continue.' })
       return
     }
-    try {
-      sessionStorage.setItem(ADMIN_KEY_STORAGE, key)
-    } catch {
-      // ignore
-    }
     setQueueStatus({
       kind: 'loading',
-      message: 'Loading pending registration requests…',
+      message: 'Validating admin key…',
     })
     setOpsStatus({ kind: 'loading', message: 'Loading ops status…' })
-    setSessionKey(key)
+    try {
+      const data = await listRegistrationRequests(key, 'pending')
+      writeAdminDevAuthKey(key)
+      setSessionKey(key)
+      setSessionVerified(true)
+      setRequests(data.requests)
+      setQueueStatus({
+        kind: 'success',
+        message: `${data.requests.length} pending request(s).`,
+      })
+      try {
+        const ops = await getOpsStatus()
+        setOpsData(ops)
+        setOpsStatus({
+          kind: 'success',
+          message: `Scheduler ${ops.scheduler_running ? 'running' : 'idle'} — ${ops.last_status}`,
+        })
+      } catch (error) {
+        setOpsData(null)
+        setOpsStatus({ kind: 'error', message: errorMessage(error) })
+      }
+    } catch (error) {
+      clearAdminDevAuthKey()
+      setSessionKey('')
+      setSessionVerified(false)
+      setRequests([])
+      setOpsData(null)
+      setOpsStatus({ kind: 'idle' })
+      setQueueStatus({
+        kind: 'error',
+        message: isUnauthorizedError(error)
+          ? 'Admin key rejected by the server. Check VERIAGENT_ADMIN_API_KEY in backend/.env.'
+          : errorMessage(error),
+      })
+    }
   }
 
   const handleClearSession = () => {
-    try {
-      sessionStorage.removeItem(ADMIN_KEY_STORAGE)
-    } catch {
-      // ignore
-    }
+    clearAdminDevAuthKey()
     setSessionKey('')
     setAdminKeyInput('')
+    setSessionVerified(false)
     setRequests([])
     setQueueStatus({ kind: 'idle' })
     setActionStatus({ kind: 'idle' })
@@ -176,6 +233,12 @@ export function AdminPage() {
       })
       await refreshQueue(sessionKey)
     } catch (error) {
+      if (isUnauthorizedError(error)) {
+        invalidateSession(
+          'Admin key rejected by the server. Unlock again with your admin API key.',
+        )
+        return
+      }
       setActionStatus({ kind: 'error', message: errorMessage(error) })
     }
   }
@@ -195,11 +258,32 @@ export function AdminPage() {
       })
       await refreshQueue(sessionKey)
     } catch (error) {
+      if (isUnauthorizedError(error)) {
+        invalidateSession(
+          'Admin key rejected by the server. Unlock again with your admin API key.',
+        )
+        return
+      }
       setActionStatus({ kind: 'error', message: errorMessage(error) })
     }
   }
 
-  if (!sessionKey) {
+  const validatingStoredSession =
+    Boolean(sessionKey) && !sessionVerified && queueStatus.kind === 'loading'
+
+  if (validatingStoredSession) {
+    return (
+      <div className="page page--narrow">
+        <section className="panel">
+          <h2 className="panel__heading">Admin session</h2>
+          <p className="panel__helper">Checking stored admin key against the backend…</p>
+          <StatusBox status={{ kind: 'loading', message: 'Validating admin credentials…' }} />
+        </section>
+      </div>
+    )
+  }
+
+  if (!sessionKey || !sessionVerified) {
     return (
       <div className="page page--narrow">
         <CryptoBoundaryNote />
@@ -255,8 +339,11 @@ export function AdminPage() {
       <section className="panel">
         <h2 className="panel__heading">
           Admin session
-          <span className="badge badge--ok">Active</span>
+          <span className="badge badge--ok">Verified</span>
         </h2>
+        <p className="panel__helper">
+          Admin key validated by the backend (<code>X-VeriAgent-Admin-Key</code>).
+        </p>
         <div className="panel__actions">
           <button
             type="button"

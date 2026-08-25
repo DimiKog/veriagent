@@ -86,6 +86,10 @@ def _install_anchor_mocks(monkeypatch, batch: dict):
         "app.batch_anchoring.anchoring.get_onchain_batch",
         fake_get_onchain_batch,
     )
+    monkeypatch.setattr(
+        "app.batch_anchoring.anchoring.is_batch_anchored",
+        lambda *_a, **_k: False,
+    )
 
 
 def test_event_status_unknown_event_returns_404():

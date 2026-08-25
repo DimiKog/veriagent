@@ -147,6 +147,10 @@ def test_ops_status_reports_last_scheduler_state_after_mocked_cycle(
             fake_get_onchain_batch,
         )
         monkeypatch.setattr(
+            "app.batch_anchoring.anchoring.is_batch_anchored",
+            lambda *_a, **_k: False,
+        )
+        monkeypatch.setattr(
             "app.batch_anchoring.load_anchoring_config",
             lambda: AnchoringConfig(
                 rpc_url="http://127.0.0.1:8545",

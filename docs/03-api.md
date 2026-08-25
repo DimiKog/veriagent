@@ -18,7 +18,7 @@ Returns:
 - `min_events` — value of `VERIAGENT_AUTO_ANCHOR_MIN_EVENTS`
 - `scheduler_running` — `true` when the background scheduler task is active
 - `last_run_at` — ISO-8601 timestamp of the most recent scheduler cycle (or `null` before first run)
-- `last_status` — one of: `idle`, `no_events`, `below_threshold`, `batch_created`, `anchor_succeeded`, `anchor_failed`
+- `last_status` — one of: `idle`, `no_events`, `below_threshold`, `batch_created`, `anchor_submitted`, `anchor_pending`, `anchor_reconciled`, `anchor_succeeded`, `anchor_failed`
 - `last_batch_id` — batch ID from the most recent cycle that created a batch (or `null`)
 - `last_anchor_tx` — transaction hash from the most recent successful anchor (or `null`)
 - `last_error` — error message from the most recent failed anchor (or `null`)
@@ -259,7 +259,23 @@ Returns `502 Bad Gateway` when the anchor transaction is mined but reverts (`rec
 
 ## Automatic batching and anchoring (v1.0-pre)
 
-When enabled, the API runs a **background scheduler** on startup (no HTTP endpoint). Each interval it counts unbatched events; if the count is at least `VERIAGENT_AUTO_ANCHOR_MIN_EVENTS`, it creates a Merkle batch and anchors it using the same logic as the admin `POST` routes above.
+When enabled, the API runs a **background scheduler** on startup (no HTTP endpoint). Each interval processes work in this order:
+
+1. **Unanchored batches first** — local `audit_batches` rows with no `batch_anchors` record (oldest first). These are reconciled or anchored before any new batching.
+2. **Unbatched events** — only when no unanchored batches remain. If the unbatched count is at least `VERIAGENT_AUTO_ANCHOR_MIN_EVENTS`, create a Merkle batch and anchor it.
+
+A cycle with zero unbatched events does **not** report only `no_events` while a locally unanchored batch still exists. Unresolved `anchor_failed` / `anchor_pending` errors are retained until a later successful operation clears them.
+
+### Chain-aware reconciliation
+
+Before submitting `anchorBatch`, `perform_batch_anchor`:
+
+1. Returns immediately if a local `batch_anchors` row already exists.
+2. Resumes a durable **pending** transaction (`pending_anchor_transactions`, status `submitted`) without broadcasting again.
+3. If the contract reports `isAnchored=true`, recovers the original `BatchAnchored` log (indexed `batchId`), verifies merkle root / event count against the local batch, inserts the missing `batch_anchors` row, and **does not** call `anchorBatch` again.
+4. Only then submits a new on-chain transaction.
+
+Pending records store at least `batch_id`, `tx_hash`, `status` (`submitted` | `confirmed` | `failed`), `submitted_at`, `last_error`, and optional confirmation fields. The transaction hash is persisted immediately after `send_raw_transaction` returns.
 
 Configuration (environment variables):
 
@@ -271,14 +287,14 @@ Configuration (environment variables):
 
 Behavior:
 1. On API startup, if enabled, the scheduler logs **scheduler started** and runs on the configured interval.
-2. Each run counts unbatched events via `list_unbatched_events()`.
-3. If there are no unbatched events, logs **no events** and skips.
+2. Each run first processes stranded / unanchored batches, then counts unbatched events via `list_unbatched_events()`.
+3. If there are no unbatched events and no unresolved anchor work, logs **no events** and skips.
 4. If the count is below `VERIAGENT_AUTO_ANCHOR_MIN_EVENTS`, skips without batching.
-5. Otherwise calls `create_batch_from_unbatched()` (logs **batch created**) then `perform_batch_anchor()` (logs **anchor succeeded** or **anchor failed**).
-6. If anchoring fails, the batch remains in SQLite; the next interval continues normally.
+5. Otherwise calls `create_batch_from_unbatched()` (logs **batch created**) then `perform_batch_anchor()` (logs **anchor succeeded**, **anchor reconciled**, **anchor pending**, or **anchor failed**).
+6. If anchoring fails after batch creation, the batch remains in SQLite and is retried on later intervals (including chain→SQLite reconciliation when already on-chain).
 7. Scheduler startup failures are logged but do not block API startup.
 
-Manual admin routes (`POST /audit/batches`, `POST /audit/batches/{batch_id}/anchor`) remain available when auto mode is enabled.
+Manual admin routes (`POST /audit/batches`, `POST /audit/batches/{batch_id}/anchor`) remain available when auto mode is enabled and use the same reconciliation logic.
 
 Requires the same Besu anchoring environment variables as manual anchoring (see [05-deployment.md](05-deployment.md)).
 

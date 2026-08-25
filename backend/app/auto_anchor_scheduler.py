@@ -8,11 +8,18 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Literal
 
-from app.anchoring import AnchorTransactionFailedError, AnchoringConfigError
+from app.anchoring import (
+    AnchorMetadataMismatchError,
+    AnchorReceiptPendingError,
+    AnchorReconciliationError,
+    AnchorTransactionFailedError,
+    AnchoringConfigError,
+)
 from app.batch_anchoring import perform_batch_anchor
 from app.storage import (
     NoUnbatchedEventsError,
     create_batch_from_unbatched,
+    list_unanchored_batches,
     list_unbatched_events,
 )
 
@@ -29,9 +36,21 @@ AutoAnchorLastStatus = Literal[
     "no_events",
     "below_threshold",
     "batch_created",
+    "anchor_submitted",
+    "anchor_pending",
+    "anchor_reconciled",
     "anchor_succeeded",
     "anchor_failed",
 ]
+
+UNRESOLVED_STATUSES = frozenset(
+    {
+        "anchor_failed",
+        "anchor_pending",
+        "anchor_submitted",
+        "batch_created",
+    }
+)
 
 logger = logging.getLogger(__name__)
 _state_lock = threading.Lock()
@@ -148,6 +167,14 @@ def _record_scheduler_state(
             _runtime_state.last_error = last_error
 
 
+def _has_unresolved_anchor_failure() -> bool:
+    with _state_lock:
+        return (
+            _runtime_state.last_status in UNRESOLVED_STATUSES
+            and _runtime_state.last_error is not None
+        )
+
+
 def get_auto_anchor_ops_status(*, service: str, version: str) -> dict[str, Any]:
     config = load_auto_anchor_config()
     task = _scheduler_task
@@ -179,6 +206,84 @@ def reset_scheduler_state_for_tests() -> None:
     _scheduler_task = None
 
 
+def _anchor_one_batch(batch_id: str, *, db_path: Any) -> None:
+    _record_scheduler_state(
+        "anchor_submitted",
+        last_batch_id=batch_id,
+        update_batch_id=True,
+    )
+    try:
+        result = perform_batch_anchor(batch_id, db_path=db_path)
+    except AnchorReceiptPendingError as exc:
+        _record_scheduler_state(
+            "anchor_pending",
+            last_batch_id=batch_id,
+            last_anchor_tx=exc.tx_hash,
+            last_error=str(exc),
+            update_batch_id=True,
+            update_anchor_tx=True,
+            update_error=True,
+        )
+        logger.info(
+            "auto anchor: anchor pending batch_id=%s tx_hash=%s",
+            batch_id,
+            exc.tx_hash,
+        )
+        raise
+    except (
+        AnchoringConfigError,
+        AnchorTransactionFailedError,
+        AnchorMetadataMismatchError,
+        AnchorReconciliationError,
+    ) as exc:
+        _record_scheduler_state(
+            "anchor_failed",
+            last_batch_id=batch_id,
+            last_error=str(exc),
+            update_batch_id=True,
+            update_error=True,
+        )
+        logger.error(
+            "auto anchor: anchor failed batch_id=%s: %s",
+            batch_id,
+            exc,
+        )
+        raise
+    except Exception as exc:
+        _record_scheduler_state(
+            "anchor_failed",
+            last_batch_id=batch_id,
+            last_error=str(exc),
+            update_batch_id=True,
+            update_error=True,
+        )
+        logger.exception(
+            "auto anchor: unexpected anchor failure batch_id=%s",
+            batch_id,
+        )
+        raise
+
+    status: AutoAnchorLastStatus = (
+        "anchor_reconciled" if result.reconciled else "anchor_succeeded"
+    )
+    _record_scheduler_state(
+        status,
+        last_batch_id=batch_id,
+        last_anchor_tx=result.anchor.tx_hash,
+        last_error=None,
+        update_batch_id=True,
+        update_anchor_tx=True,
+        update_error=True,
+    )
+    logger.info(
+        "auto anchor: %s batch_id=%s tx_hash=%s already_anchored=%s",
+        status,
+        batch_id,
+        result.anchor.tx_hash,
+        result.already_anchored,
+    )
+
+
 def run_auto_anchor_cycle(
     *,
     db_path: Any = None,
@@ -186,11 +291,52 @@ def run_auto_anchor_cycle(
 ) -> None:
     cfg = config or load_auto_anchor_config()
     _record_cycle_start()
+
+    unanchored = list_unanchored_batches(db_path)
+    completed_unanchored_work = False
+    if unanchored:
+        logger.info(
+            "auto anchor: found unanchored batch count=%d",
+            len(unanchored),
+        )
+        for batch in unanchored:
+            logger.info(
+                "auto anchor: found unanchored batch batch_id=%s",
+                batch.batch_id,
+            )
+            try:
+                _anchor_one_batch(batch.batch_id, db_path=db_path)
+                completed_unanchored_work = True
+            except (
+                AnchorReceiptPendingError,
+                AnchoringConfigError,
+                AnchorTransactionFailedError,
+                AnchorMetadataMismatchError,
+                AnchorReconciliationError,
+            ):
+                return
+            except Exception:
+                return
+
+        remaining = list_unanchored_batches(db_path)
+        if remaining:
+            return
+
     logger.info("auto anchor: checking unbatched events")
     unbatched_count = len(list_unbatched_events(db_path))
     logger.info("auto anchor: unbatched event count=%d", unbatched_count)
 
     if unbatched_count == 0:
+        if completed_unanchored_work:
+            logger.info(
+                "auto anchor: unanchored work complete; no further unbatched events"
+            )
+            return
+        if _has_unresolved_anchor_failure():
+            logger.info(
+                "auto anchor: no events; retaining prior unresolved anchor status"
+            )
+            return
         _record_scheduler_state("no_events", update_error=True, last_error=None)
         logger.info("auto anchor: no events")
         return
@@ -207,6 +353,11 @@ def run_auto_anchor_cycle(
     try:
         batch = create_batch_from_unbatched(db_path)
     except NoUnbatchedEventsError:
+        if _has_unresolved_anchor_failure():
+            logger.info(
+                "auto anchor: no events; retaining prior unresolved anchor status"
+            )
+            return
         _record_scheduler_state("no_events", update_error=True, last_error=None)
         logger.info("auto anchor: no events")
         return
@@ -225,34 +376,17 @@ def run_auto_anchor_cycle(
     )
 
     try:
-        result = perform_batch_anchor(batch.batch_id, db_path=db_path)
-    except (AnchoringConfigError, AnchorTransactionFailedError) as exc:
-        _record_scheduler_state(
-            "anchor_failed",
-            update_error=True,
-            last_error=str(exc),
-        )
-        logger.error(
-            "auto anchor: anchor failed batch_id=%s: %s",
-            batch.batch_id,
-            exc,
-        )
+        _anchor_one_batch(batch.batch_id, db_path=db_path)
+    except (
+        AnchorReceiptPendingError,
+        AnchoringConfigError,
+        AnchorTransactionFailedError,
+        AnchorMetadataMismatchError,
+        AnchorReconciliationError,
+    ):
         return
-
-    anchor = result.anchor
-    _record_scheduler_state(
-        "anchor_succeeded",
-        last_anchor_tx=anchor.tx_hash,
-        update_anchor_tx=True,
-        update_error=True,
-        last_error=None,
-    )
-    logger.info(
-        "auto anchor: anchor succeeded batch_id=%s tx_hash=%s already_anchored=%s",
-        batch.batch_id,
-        anchor.tx_hash,
-        result.already_anchored,
-    )
+    except Exception:
+        return
 
 
 async def _auto_anchor_scheduler_loop(

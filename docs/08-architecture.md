@@ -185,9 +185,10 @@ See [06-threat-model.md](06-threat-model.md) for detail.
 
 When `VERIAGENT_AUTO_ANCHOR_ENABLED=true`, a background scheduler runs inside the API process:
 
-- Every `VERIAGENT_AUTO_ANCHOR_INTERVAL_SECONDS` (default 300), counts unbatched events.
-- If count ≥ `VERIAGENT_AUTO_ANCHOR_MIN_EVENTS` (default 1), creates a batch and anchors it.
-- On anchor failure, the batch remains in SQLite; the next cycle continues.
+- Each interval first processes **locally unanchored batches** (SQLite batch without `batch_anchors`), including chain→SQLite reconciliation via the indexed `BatchAnchored` event when the contract already has the batch.
+- Only then counts unbatched events; if count ≥ `VERIAGENT_AUTO_ANCHOR_MIN_EVENTS` (default 1), creates a batch and anchors it.
+- After `send_raw_transaction`, a durable **pending** transaction hash is stored so restarts resume the same tx instead of submitting a duplicate.
+- On anchor failure, the batch remains in SQLite and is retried on later cycles.
 - Requires the same Besu anchoring env vars as manual anchoring.
 
 ### Backup/restore
@@ -196,7 +197,7 @@ Operator scripts `scripts/backup_sqlite.sh` and `scripts/restore_sqlite.sh` use 
 
 ### Ops status
 
-Public `GET /ops/status` returns scheduler configuration and last cycle metadata (`last_status`, `last_batch_id`, `last_anchor_tx`, `last_error`). No secrets, RPC URL, or private keys.
+Public `GET /ops/status` returns scheduler configuration and last cycle metadata (`last_status`, `last_batch_id`, `last_anchor_tx`, `last_error`). Status values include `anchor_submitted`, `anchor_pending`, `anchor_reconciled`, `anchor_succeeded`, and `anchor_failed`. No secrets, RPC URL, or private keys.
 
 ---
 

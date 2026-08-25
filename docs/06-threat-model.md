@@ -88,6 +88,17 @@ Implemented:
 Not yet implemented:
 - Frontend or SDK updates to supply the admin key for batch/anchor operations (operator curl or server-side automation only for now).
 
+## v1.0.0-rc.1 — Residual Risk: Console Credential Exposure
+
+In the current RC implementation, the Console may temporarily hold an agent API key in browser `sessionStorage`. This limits persistence compared with `localStorage`, but does not protect the credential from same-origin JavaScript or XSS. The production target is operator session authentication, with agent API keys retained as machine credentials outside the browser.
+
+Mitigations in place:
+- Session-scoped storage only (`sessionStorage`, cleared on tab close); never `localStorage`.
+- The Console never asks for or stores agent private keys; signing happens outside the browser (CLI/SDK).
+- The `DevAuthBanner` makes the temporary operator-unlock model visible instead of hiding it.
+
+Production path (not yet implemented): operator authentication/SSO issuing a Console session, with the agent API key remaining a machine credential for SDK/CLI and agent hosts only.
+
 ## Future Mitigations
 
 - Short anchoring intervals.

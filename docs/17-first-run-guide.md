@@ -1,129 +1,142 @@
 # VeriAgent First Run Guide
 
-This guide walks a new developer through installing VeriAgent, running the backend and frontend, completing agent registration, submitting a signed audit event, watching it batch and anchor, and independently verifying the evidence.
+This guide walks you through a local VeriAgent setup: start the Backend and Frontend, register an agent, submit a signed audit event, and verify the result. If blockchain anchoring is configured, you can also follow the full **Submitted → Batched → Anchored** lifecycle and run offline verification.
 
-**Crypto rule:** the browser never holds an agent private key. DID derivation, ownership proof, credential claim, and event signing are performed only by the official Python SDK / CLI.
+**Two supported paths**
 
-**Assumed layout:** commands below are relative to the repository root unless noted.
+| Path | Configure in §1 | Sections you complete |
+| --- | --- | --- |
+| **Quick local run** | Skip blockchain anchoring | §§1–8, §9 (Submitted only), §10 (basic lookup) |
+| **Full end-to-end** | Enable blockchain anchoring | §§1–11 |
+
+**Crypto rule:** the browser never holds an agent private key. DID derivation, ownership proof, credential claim, and event signing are performed only by the VeriAgent CLI (installed from the Python SDK).
+
+**Conventions:** every section states which terminal to use. Each terminal keeps its own working directory after you enter it — stay in that terminal until the guide asks you to switch. Open a new terminal only when the guide explicitly tells you to (Backend in §2, Frontend in §3; the CLI terminal is set up in §1). The first command block in each terminal section shows how to enter that directory; later blocks in the same section assume you are already there.
 
 ---
 
 ## 1. Prerequisites
 
-### Runtime
+Complete this section once. You do not need prior knowledge of VeriAgent — install tools, configure the Backend, and verify the CLI.
 
-| Requirement | Version / notes |
-| --- | --- |
-| Python | **3.12+** for the backend (SDK alone allows ≥3.11) |
-| Node.js | **20+** (current LTS) and npm |
-| OS tools | `git`, a shell (`bash` / `zsh`) |
-
-### Backend dependencies
-
-Installed from `backend/requirements.txt` (FastAPI, Uvicorn, cryptography, web3, jcs, …). No separate migrate CLI is required.
-
-### SDK / CLI
-
-Install the editable package under `sdk/python` so the `veriagent` console command is available (prove, claim, submit, verify).
-
-### Environment variables
-
-The API reads configuration from the **process environment**. Local and production use the same loader:
-
-1. Copy `backend/.env.example` → `backend/.env` and edit values (never commit `.env`).
-2. On startup, the API loads `backend/.env` if present.
-3. Variables already set in the process environment (shell export, systemd `EnvironmentFile`, container env) take precedence over `.env`.
-
-Details: [05-deployment.md](05-deployment.md#how-configuration-is-loaded-local-and-production).
-
-| Variable | Required for | Purpose |
-| --- | --- | --- |
-| `VERIAGENT_ADMIN_API_KEY` | Admin UI / admin routes | Value sent as `X-VeriAgent-Admin-Key` |
-| `VERIAGENT_RECEIPT_SECRET` | Production-like receipts | HMAC-SHA256 ingestion receipts (dev has a fallback if unset) |
-| `VERIAGENT_REGISTRATION_ENABLED` | Public registration | Set to `true` (or `1` / `yes` / `on`) or registration routes return **404** |
-| `VERIAGENT_REGISTRATION_CHALLENGE_TTL_MINUTES` | Registration | Challenge / pending window (default **15**). Pending requests (including proved-but-unapproved) expire when this elapses |
-| `VERIAGENT_DB_PATH` | Optional | SQLite path (default `backend/data/veriagent.db`) |
-| `VERIAGENT_AUTO_ANCHOR_ENABLED` | Auto batch + anchor | `true` to start the in-process scheduler |
-| `VERIAGENT_AUTO_ANCHOR_INTERVAL_SECONDS` | Auto anchor | Default `300` |
-| `VERIAGENT_AUTO_ANCHOR_MIN_EVENTS` | Auto anchor | Default `1` |
-| `VERIAGENT_RPC_URL` | Anchoring | JSON-RPC endpoint |
-| `VERIAGENT_CHAIN_ID` | Anchoring | e.g. `424242` (Besu Edu-Net) |
-| `VERIAGENT_ANCHOR_CONTRACT_ADDRESS` | Anchoring | Deployed `VeriAgentAnchor` |
-| `VERIAGENT_ANCHOR_PRIVATE_KEY` | Anchoring | Signer allowed to call `anchorBatch` |
-
-### Blockchain node (when anchoring is enabled)
-
-You need a reachable JSON-RPC node, a matching chain ID, the `VeriAgentAnchor` contract address, and a funded/authorized owner key for `anchorBatch`. Foundry is **not** required on the API host at runtime.
-
-Without these four anchoring variables, the rest of the stack (registration, submit, Console/Dashboard reads) still works; anchoring returns **503** until configured.
-
-### Admin API key
-
-Choose a long random string and set `VERIAGENT_ADMIN_API_KEY`. You will paste the same value into the Admin page unlock field.
-
-### Registration enabled flag
-
-For this guide:
+### Check required software
 
 ```bash
-export VERIAGENT_REGISTRATION_ENABLED=true
+python3 --version   # 3.12+ required for the Backend
+node --version      # 20+ required for the Frontend
+npm --version
+git --version
 ```
 
-### Frontend → local API
+Install or upgrade anything that is missing. Node.js and npm are needed in §3; do not start the Frontend dev server yet.
 
-Local `npm run dev` calls `http://127.0.0.1:8000` by default. Override with `VITE_API_BASE_URL` only if you need a different host (for example production). CLI snippets in the UI use the same absolute base.
+### Create `backend/.env`
+
+From any terminal, with your working directory at the **repository root** (the directory that contains `backend/`, `frontend/`, and `sdk/`):
+
+```bash
+cp backend/.env.example backend/.env
+```
+
+Never commit `backend/.env`. The Backend loads it automatically on startup.
+
+### Set three required values
+
+Edit `backend/.env`. Change only these lines:
+
+```bash
+VERIAGENT_ADMIN_API_KEY=GENERATE_BELOW
+VERIAGENT_RECEIPT_SECRET=GENERATE_BELOW
+VERIAGENT_REGISTRATION_ENABLED=true
+```
+
+Leave all other values as copied from `.env.example`.
+
+| Variable | Purpose |
+| --- | --- |
+| `VERIAGENT_ADMIN_API_KEY` | Unlocks the Admin UI (same value you enter on the Admin page) |
+| `VERIAGENT_RECEIPT_SECRET` | Signs ingestion receipts for submitted events |
+| `VERIAGENT_REGISTRATION_ENABLED` | Enables registration routes (`true` is the `.env.example` default — confirm it) |
+
+Generate secrets:
+
+```bash
+openssl rand -hex 32
+openssl rand -hex 32
+```
+
+Paste the first value into `VERIAGENT_ADMIN_API_KEY` and the second into `VERIAGENT_RECEIPT_SECRET`.
+
+### Optional: blockchain anchoring
+
+Skip this for a quick local run. Without anchoring you can register an agent, submit events, use the Console, and look up events on the Dashboard. You cannot complete batching, on-chain anchoring, or the full offline proof-and-anchor workflow. Anchoring API calls return **503** until configured.
+
+For the full path, uncomment and set these in `backend/.env`, then set `VERIAGENT_AUTO_ANCHOR_ENABLED=true`:
+
+- `VERIAGENT_RPC_URL`
+- `VERIAGENT_CHAIN_ID`
+- `VERIAGENT_ANCHOR_CONTRACT_ADDRESS`
+- `VERIAGENT_ANCHOR_PRIVATE_KEY`
+
+You need a reachable JSON-RPC node, matching chain ID, deployed `VeriAgentAnchor` contract, and an authorized signer key. See [05-deployment.md](05-deployment.md) for deployment detail.
+
+### Install and verify the CLI
+
+The Backend and the SDK use **separate Python virtual environments**. Install the CLI now; you will use it in §§4–8 and §11.
+
+**CLI terminal** (first use) — working directory: repository root, then `sdk/python/`:
+
+```bash
+cd sdk/python
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e .
+veriagent --help
+```
+
+Confirm the help output lists `verify`, `register` and `submit` subcommands. Leave this terminal open; remain in `sdk/python/` with the SDK venv active.
+
+### Pre-flight checklist
+
+Confirm the following, then continue to §2:
+
+- [ ] Python 3.12+, Node 20+, npm, and git are available
+- [ ] `backend/.env` exists with generated secrets and `VERIAGENT_REGISTRATION_ENABLED=true`
+- [ ] `veriagent --help` works in the CLI terminal
+- [ ] Blockchain variables unchanged (quick path) or configured (full path)
+- [ ] Frontend dev server not started yet (§3)
 
 ---
 
-## 2. Start the backend
+## 2. Start the Backend
 
-### Install dependencies
+Open a new **Backend terminal** (do not reuse the CLI terminal from §1). Keep it open for the rest of this guide. The API must stay running through §11.
+
+### Install dependencies and start the API
+
+**Backend terminal** (first use) — working directory: repository root, then `backend/`:
 
 ```bash
 cd backend
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-```
-
-### Initialize the database
-
-No separate migrate step. On startup, the FastAPI lifespan calls `init_db()`, which creates SQLite tables under `backend/data/` (or `VERIAGENT_DB_PATH`) and applies light column migrations.
-
-### Configure environment variables
-
-Copy the example file and edit secrets:
-
-```bash
-cd backend
-cp .env.example .env
-# edit VERIAGENT_ADMIN_API_KEY, VERIAGENT_RECEIPT_SECRET, registration, and optional anchoring
-```
-
-Minimum for this guide (already reflected in `.env.example` defaults you can tighten):
-
-- `VERIAGENT_ADMIN_API_KEY` — long random string  
-- `VERIAGENT_RECEIPT_SECRET` — long random string  
-- `VERIAGENT_REGISTRATION_ENABLED=true`  
-- Optionally raise `VERIAGENT_REGISTRATION_CHALLENGE_TTL_MINUTES` for a slower walkthrough  
-- Optionally enable auto-anchor and set blockchain variables if you want on-chain anchors  
-
-If you prefer not to use a `.env` file, export the same variables in the Uvicorn shell instead.
-
-### Start the API
-
-```bash
-cd backend
-source .venv/bin/activate
 uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-- API: [http://127.0.0.1:8000](http://127.0.0.1:8000)
-- OpenAPI UI: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
+Remain in `backend/` with the Backend venv active. Do not close this terminal.
 
-### Verify `/health`
+The database is created automatically on first startup. No separate migrate step is required.
 
-Open [http://127.0.0.1:8000/health](http://127.0.0.1:8000/health) in a browser, or use any HTTP client. Expected JSON:
+If the API starts successfully and `/health` responds as shown below, `backend/.env` has been loaded correctly. If Uvicorn fails to start because of missing configuration or environment variables, stop the server (`Ctrl+C`), return to §1, correct `backend/.env`, and start the Backend again.
+
+### Verify the API
+
+- [http://127.0.0.1:8000/health](http://127.0.0.1:8000/health) — confirms the Backend process is up and serving traffic.
+- [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs) — opens the interactive OpenAPI UI for exploring Backend routes.
+- [http://127.0.0.1:8000/ops/status](http://127.0.0.1:8000/ops/status) — reports auto-anchor settings and the latest batch/anchor run status.
+
+**`/health`** — expected response:
 
 ```json
 {
@@ -133,18 +146,16 @@ Open [http://127.0.0.1:8000/health](http://127.0.0.1:8000/health) in a browser, 
 }
 ```
 
-### Verify `/ops/status`
-
-Open [http://127.0.0.1:8000/ops/status](http://127.0.0.1:8000/ops/status). Expected shape (values depend on your env):
+**`/ops/status`** — expected shape with default `.env.example` (anchoring disabled):
 
 ```json
 {
   "service": "veriagent",
   "version": "1.0.0-rc.1",
-  "auto_anchor_enabled": true,
-  "interval_seconds": 60,
+  "auto_anchor_enabled": false,
+  "interval_seconds": 300,
   "min_events": 1,
-  "scheduler_running": true,
+  "scheduler_running": false,
   "last_run_at": null,
   "last_status": "idle",
   "last_batch_id": null,
@@ -153,34 +164,43 @@ Open [http://127.0.0.1:8000/ops/status](http://127.0.0.1:8000/ops/status). Expec
 }
 ```
 
-If `VERIAGENT_AUTO_ANCHOR_ENABLED` is unset/false, expect `auto_anchor_enabled: false` and `scheduler_running: false`. `last_status` may later be `idle`, `no_events`, `below_threshold`, `batch_created`, `anchor_succeeded`, or `anchor_failed`.
+If you enabled anchoring in §1, expect `auto_anchor_enabled: true` and `scheduler_running: true` when chain configuration is complete.
+
+Continue to §3 to start the Frontend.
 
 ---
 
-## 3. Start the frontend
+## 3. Start the Frontend
 
-### Install dependencies
+Open a new **Frontend terminal** (do not reuse the Backend or CLI terminal). Working directory: repository root, then `frontend/`:
 
 ```bash
 cd frontend
 npm install
-```
-
-### Run the SPA against the local API
-
-```bash
-cd frontend
 npm run dev
 ```
 
-The SPA uses `http://127.0.0.1:8000` by default in development. No source edits required.
+Note: `npm install` may report known vulnerabilities in development dependencies. For the current Release Candidate, these are expected and do not prevent the Frontend from running. Continue unless the installation itself fails.
+
+Remain in `frontend/`. Do not close this terminal.
+
+### Three terminals
+
+From §4 onward, three terminals run in parallel:
+
+| Terminal | Directory | Activate | Purpose |
+| --- | --- | --- | --- |
+| **Backend** | `backend/` | `source .venv/bin/activate` | API (`uvicorn`) — §2 |
+| **Frontend** | `frontend/` | — | Dev server (`npm run dev`) — above |
+| **CLI** | `sdk/python/` | `source .venv/bin/activate` | `veriagent` commands — §§4–8, 11 |
+
+If you must open a new CLI shell, enter `sdk/python/`, activate the venv, and stay there for all CLI steps.
 
 ### Expected URLs
 
 | Mode | URL |
 | --- | --- |
 | Dev | [http://localhost:5173/veriagent/](http://localhost:5173/veriagent/) |
-| Preview (after build) | [http://localhost:4173/veriagent/](http://localhost:4173/veriagent/) |
 
 Vite `base` and React Router basename are both `/veriagent`.
 
@@ -194,41 +214,47 @@ Vite `base` and React Router basename are both `/veriagent`.
 | `/veriagent/console` | Console | Operator view of your agent’s events (API key unlock) |
 | `/veriagent/admin` | Admin | Approve/reject registrations (admin key unlock) |
 
+### Before continuing
+
+Confirm the following before starting registration:
+
+- [ ] Backend API is running (`uvicorn` in the Backend terminal, working directory `backend/`)
+- [ ] Frontend is available at [http://localhost:5173/veriagent/](http://localhost:5173/veriagent/) (Frontend terminal, working directory `frontend/`)
+- [ ] CLI is installed and the SDK venv is active (CLI terminal, working directory `sdk/python/`)
+- [ ] All three terminals from above are open and left running
+
+You are now ready to register your first agent.
+
 ---
 
 ## 4. Register a new agent
 
-Registration is a multi-surface workflow: **Register page** creates the public request; **CLI** proves ownership and later claims credentials; **Admin** approves.
+Registration spans three surfaces: the **Register** page creates the request, the **CLI** proves ownership and claims credentials, and **Admin** approves.
 
-### Generate an agent keypair (SDK only — never in the browser)
+**CLI terminal** — working directory `sdk/python/`, SDK venv active. Only if you opened a new shell since §1, run `cd sdk/python && source .venv/bin/activate` once, then stay in this terminal.
 
-Install the CLI first (keep this shell for later steps):
+**Time limit:** challenges expire after `VERIAGENT_REGISTRATION_CHALLENGE_TTL_MINUTES` (default **15**). Complete prove → Admin approval → claim before expiry, or increase the TTL in `backend/.env` and restart the Backend.
 
-```bash
-cd sdk/python
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e .
-```
+### Generate an agent keypair
 
-Store credentials **outside the repository** under `~/.veriagent/` (create once):
+Stay in `sdk/python/` with the SDK venv active. These commands create a private credential directory in your home directory, outside the repository. You do not need to `cd` into it:
 
 ```bash
 mkdir -p ~/.veriagent
 chmod 700 ~/.veriagent
 ```
 
-Create a private key file (32-byte Ed25519 seed, base64). Do not commit this file or paste it into the UI:
+Create a private key (32-byte Ed25519 seed, base64). The command writes directly to `~/.veriagent/agent.key`. Do not commit this file or paste it into the UI:
 
 ```bash
-python -c "from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey; import base64; print(base64.b64encode(Ed25519PrivateKey.generate().private_bytes_raw()).decode())" > ~/.veriagent/agent.key
+python3 -c "from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey; import base64; print(base64.b64encode(Ed25519PrivateKey.generate().private_bytes_raw()).decode())" > ~/.veriagent/agent.key
 chmod 600 ~/.veriagent/agent.key
 ```
 
-Derive the public identity fields the Register form needs:
+Derive the public identity fields for the Register form:
 
 ```bash
-python - <<'PY'
+python3 - <<'PY'
 from pathlib import Path
 from veriagent import derive_agent_identity
 pk = Path.home().joinpath(".veriagent", "agent.key").read_text().strip()
@@ -239,11 +265,12 @@ print("verification_method:", verification_method)
 PY
 ```
 
-Keep `~/.veriagent/agent.key` on disk. You will use the three printed values only as **public** form fields.
+Save the three printed values for the form. Keep `~/.veriagent/agent.key` on disk.
 
-> Alternative: `veriagent register request …` creates the same request from the CLI and derives identity from the private key automatically. This section uses the Register page as requested.
 
 ### Fill the registration form
+
+**Browser** — Frontend dev server from §3 (no terminal commands):
 
 1. Open [http://localhost:5173/veriagent/register](http://localhost:5173/veriagent/register).
 2. Complete the form:
@@ -260,120 +287,98 @@ Keep `~/.veriagent/agent.key` on disk. You will use the three printed values onl
    | Use case summary | Short description |
    | Description | Optional |
 
-3. Submit. The page calls `POST /registration/requests` and shows a success payload including `request_id`, `challenge_expires_at`, and challenge metadata.
+3. Submit. The page shows `request_id`, `challenge_expires_at`, and challenge metadata.
 
-### Obtain the `request_id`
+### Save the `request_id`
 
-Copy `request_id` from:
+Copy `request_id` from the Register page badge or success JSON. You need the same id for prove and claim in §§5 and 7.
 
-- the badge / challenge summary on the Register page, and/or
-- the success status JSON
+### Registration status reference
 
-Save it; prove and claim require the same id.
+The Register page polls status every ~4 seconds. Backend values: `pending` | `approved` | `rejected` | `expired`.
 
-### Understand registration status
-
-The page polls `GET /registration/requests/{request_id}` about every 4 seconds. Backend statuses: `pending` | `approved` | `rejected` | `expired`.
-
-UI phases you will see after create:
-
-| Phase | Meaning |
+| UI phase | Meaning |
 | --- | --- |
-| Requested / Proof required | Challenge issued; ownership proof not yet submitted |
+| Requested / Proof required | Challenge issued; proof not yet submitted |
 | Pending approval | Proof accepted; waiting for Admin |
 | Approved | Admin approved; credentials available to claim once |
 | Credentials claimed | API key already retrieved |
-| Rejected / Expired | Terminal; start a new request |
+| Rejected / Expired | Terminal — start a new request |
 
-While pending and before proof, the status response may include `proof_payload` for the CLI. After proof, the page shows the prove/claim CLI snippets with your `request_id`.
+Reloading the Register page does not resume an existing `request_id`. Keep the tab open through approval, or continue with the saved id in the CLI.
 
-**Note:** Reloading the Register page does not resume an existing `request_id` in the UI. Keep the tab open through approval, or continue with CLI prove/claim using the saved id.
+Continue to §5 to prove ownership.
 
 ---
 
 ## 5. Prove agent ownership
 
-Use the official CLI. Private keys stay on your machine; only a signature is sent.
+**CLI terminal** — working directory `sdk/python/`, SDK venv active.
+
+Replace uppercase placeholders such as `REQUEST_ID_HERE` with the actual value. Do not add `<` or `>`.
 
 ```bash
-cd sdk/python
-source .venv/bin/activate
-
 veriagent register prove \
-  --request-id <request_id> \
+  --request-id REQUEST_ID_HERE \
   --api-base-url http://127.0.0.1:8000 \
   --private-key-file ~/.veriagent/agent.key
 ```
 
-### What the CLI does
+The CLI loads your private key locally, fetches the challenge `proof_payload`, signs it with Ed25519, and submits `POST /registration/requests/{request_id}/proof`. Only the signature is sent over the network.
 
-1. Loads the private key from `--private-key-file` (or `--private-key` / `VERIAGENT_PRIVATE_KEY`). Prefer a file; never put the key in the browser.
-2. Derives `agent_did` and `verification_method` from that key.
-3. Retrieves the challenge `proof_payload` via `GET /registration/requests/{request_id}` (or from `--proof-payload` if you saved the create response).
-4. Canonicalizes the payload with RFC 8785 / JCS and signs it locally with Ed25519.
-5. Submits `POST /registration/requests/{request_id}/proof` with `{ proof_signature, verification_method }`.
+**Expected result:** status remains `pending` with `proof_submitted_at` set. The Register page moves to **Pending approval**.
 
-Expected result: status remains `pending`, with `proof_submitted_at` set. The Register page should move to **Pending approval**.
-
-The CLI never prints the private key.
+Continue to §6 for Admin approval.
 
 ---
 
 ## 6. Admin approval
 
+**Browser** — Frontend dev server from §3 (no terminal commands):
+
 1. Open [http://localhost:5173/veriagent/admin](http://localhost:5173/veriagent/admin).
-2. Enter the same value as `VERIAGENT_ADMIN_API_KEY` and unlock. The key is stored only in `sessionStorage` for this browser session and sent as `X-VeriAgent-Admin-Key`.
-3. Review the pending queue (`GET /registration/requests?status=pending`). Confirm proof was submitted (Approve is disabled until then).
-4. Optionally add review notes, then **Approve**.
+2. Enter your `VERIAGENT_ADMIN_API_KEY` value and unlock.
+3. Review the pending queue. If the request was already visible before you ran `register prove`, click **Refresh queue** afterward — the Admin page can keep a stale queue until you refresh.
+4. Confirm the request now shows that proof has been submitted. **Approve** is enabled only then.
+5. Optionally add review notes, then **Approve**.
 
-### What changes after approval
+**After approval:**
 
-- Request status becomes `approved`.
-- An agent record is created as `active`.
-- A one-time agent API key is prepared server-side (`pending_api_key`).
-- The Admin response JSON includes a `retrieval_token` (`vrt_…`) — **not** the agent API key. The applicant still claims credentials with the CLI.
-- Register page shows **Approved** and the claim CLI snippet while `credentials_available` is true.
+- Request status becomes `approved` and an active agent record is created.
+- A one-time API key is prepared server-side. The Admin response includes a `retrieval_token` (`vrt_…`) — not the agent API key.
+- The Register page shows **Approved** and the claim CLI snippet while `credentials_available` is true.
 
-Approve before `challenge_expires_at`. There is no separate review grace period in the current implementation.
+Approve before `challenge_expires_at`. Pending requests expire when the challenge TTL elapses.
+
+Continue to §7 to claim credentials.
 
 ---
 
 ## 7. Claim credentials
 
-After approval:
+**CLI terminal** — working directory `sdk/python/`, SDK venv active:
 
 ```bash
 veriagent register claim \
-  --request-id <request_id> \
+  --request-id REQUEST_ID_HERE \
   --api-base-url http://127.0.0.1:8000 \
   --private-key-file ~/.veriagent/agent.key \
   --output-key-file ~/.veriagent/agent.api_key
 ```
 
-Optional: `--retrieval-token <vrt_…>` (from the Admin approve response) as an extra binding header.
+Optional: `--retrieval-token RETRIEVAL_TOKEN_HERE` from the Admin approve response.
 
-### What the CLI does
+The CLI signs a claim payload locally, calls `POST /registration/requests/{request_id}/credentials`, and writes the one-time API key (`va_agent_…`) to `~/.veriagent/agent.api_key`.
 
-1. Builds claim payload `{ purpose: "veriagent-credentials-claim", request_id, agent_did }`.
-2. Signs it locally (ownership verification).
-3. Calls `POST /registration/requests/{request_id}/credentials`.
-4. Receives the agent API key **once** (`va_agent_…`).
-5. Writes the key to `--output-key-file` when provided, and prints the claim JSON (includes `api_key`).
+**Storage:** keep `~/.veriagent/` at mode `700` (directory) and `600` (files). Never commit credentials or paste the API key into Dashboard or Register. A second claim fails after credentials are consumed.
 
-### Secure storage
-
-- Keep credentials under `~/.veriagent/` with mode `600` for files and `700` for the directory.
-- Treat `~/.veriagent/agent.api_key` like a password: never commit, never paste into Dashboard/Register.
-- Console may use the API key only as a temporary operator unlock for listing your events (dev auth). Production operators should keep the key on the agent host that runs the SDK/CLI.
-- A second claim fails once credentials are already claimed.
+Continue to §8 to submit your first audit event.
 
 ---
 
 ## 8. Submit the first audit event
 
-Do **not** sign in the browser. Use the CLI or SDK.
-
-### CLI
+**CLI terminal** — working directory `sdk/python/`, SDK venv active:
 
 ```bash
 export VERIAGENT_API_KEY="$(cat ~/.veriagent/agent.api_key)"
@@ -392,15 +397,9 @@ veriagent submit \
   --output-event ~/.veriagent/event.json
 ```
 
-Or pass `--event ~/.veriagent/event-unsigned.json` for unsigned fields (the CLI adds `agent_id`, `signature`, and `verification_method`). Use `--output-event` to keep the signed payload for section 11.
+Alternatively, pass `--event ~/.veriagent/event-unsigned.json` for unsigned fields; the CLI adds `agent_id`, `signature`, and `verification_method`. Save the signed output with `--output-event` for §11.
 
-### What happens
-
-1. The CLI derives the agent DID from the private key and builds the unsigned event (`agent_id` = DID).
-2. It JCS-canonicalizes the unsigned event and signs with Ed25519.
-3. It `POST`s to `/audit/events` with header `X-VeriAgent-API-Key`.
-
-### Expected response
+**Expected response:**
 
 ```json
 {
@@ -417,91 +416,109 @@ Or pass `--event ~/.veriagent/event-unsigned.json` for unsigned fields (the CLI 
 }
 ```
 
-Save `event_id` and the signed event from `--output-event` (needed for offline `veriagent verify`). Prefer `~/.veriagent/` over paths inside the git checkout.
+Save `event_id` and `~/.veriagent/event.json` for §11.
 
-### Python SDK equivalent
-
-```python
-from pathlib import Path
-from veriagent import VeriAgentClient
-
-client = VeriAgentClient(
-    api_base_url="http://127.0.0.1:8000",
-    agent_api_key=Path.home().joinpath(".veriagent", "agent.api_key").read_text().strip(),
-    private_key_base64=Path.home().joinpath(".veriagent", "agent.key").read_text().strip(),
-)
-response = client.submit_event(
-    event_id="event-first-run-001",
-    task_id="task-001",
-    model_name="demo-model",
-    tool_calls=["search", "calculator"],
-    input_hash="sha256:input123",
-    output_hash="sha256:output456",
-    policy_version="policy-v0.1",
-)
-print(response)
-```
+Continue to §9 to observe the event lifecycle.
 
 ---
 
 ## 9. Observe the event lifecycle
 
-1. Open [http://localhost:5173/veriagent/console](http://localhost:5173/veriagent/console).
-2. Unlock with the agent API key (`X-VeriAgent-API-Key` in session storage).
-3. Refresh the event list (`GET /audit/events`). Select your event.
+> **Without anchoring (quick path):** events remain at **Submitted**. You can confirm them in the Console and look them up on the Dashboard. Skip to §10 for basic lookup, or configure anchoring in §1 and restart the Backend to continue below.
 
-Lifecycle is derived from `GET /audit/events/{event_id}/status`:
+> **With anchoring (full path):** ensure §1 anchoring variables are set and `VERIAGENT_AUTO_ANCHOR_ENABLED=true`. Restart the Backend if you changed `.env` after §2.
+
+**Browser** — Frontend dev server from §3 (no terminal commands):
+
+1. Open [http://localhost:5173/veriagent/console](http://localhost:5173/veriagent/console).
+2. Unlock with your agent API key.
+3. Select your event and refresh the lifecycle view.
 
 | State | Meaning |
 | --- | --- |
-| **Submitted** | Event is stored and hash-committed; not yet in a Merkle batch (`batched=false`) |
-| **Batched** | Included in a batch; `batch_id` and `merkle_root` are set (`batched=true`, `anchored=false`) |
-| **Anchored** | Batch Merkle root written on-chain; `tx_hash`, `block_number`, `chain_id`, `anchored_at` present |
+| **Submitted** | Event stored; not yet in a Merkle batch (`batched=false`) |
+| **Batched** | Included in a batch; `batch_id` and `merkle_root` set (`batched=true`, `anchored=false`) |
+| **Anchored** | Merkle root on-chain; `tx_hash`, `block_number`, `chain_id`, `anchored_at` present |
 
-With auto-anchor enabled and anchoring configured, the scheduler periodically creates a batch from unbatched events and anchors it. Watch `/ops/status` (also shown on Admin) for `last_status`, `last_batch_id`, and `last_anchor_tx`.
+With auto-anchor enabled, the scheduler batches unbatched events and anchors them. Monitor `/ops/status` (or the Admin ops panel) for `last_status`, `last_batch_id`, and `last_anchor_tx`.
 
-From Console you can also look up the batch, fetch and verify the Merkle proof against the API’s verifier, and load the anchor record. Use **Refresh lifecycle** while waiting.
+Use **Refresh lifecycle** in the Console while waiting. Once **Anchored**, continue to §10 on the Dashboard to download proof and anchor JSON for offline verification.
 
-If anchoring is disabled or not configured, events remain **Submitted** (or **Batched** if you create a batch manually via admin API) without progressing to **Anchored**.
+Continue to §10 for public verification on the Dashboard.
 
 ---
 
 ## 10. Public verification
 
-1. Open [http://localhost:5173/veriagent/dashboard](http://localhost:5173/veriagent/dashboard). No credentials.
-2. Paste the `event_id` (and `batch_id` once known).
-3. Refresh lifecycle until **Anchored**.
-4. Use the evidence actions:
+**Browser** — Frontend dev server from §3 (no terminal commands):
 
-   - **Lookup batch** — batch metadata including Merkle root  
-   - **Get & verify proof** — inclusion proof for the event hash, then server-side Merkle verify  
-   - **Get anchor record** — `tx_hash`, block, chain id, timestamps  
+The Dashboard is the recommended place to **inspect and download** evidence for offline verification (§11). It is read-only, needs no credentials, and matches the public verification model. The Console (§9) exposes the same evidence actions for operators, but does not include download buttons — use the Dashboard when preparing local files for `veriagent verify`.
 
-### What the reviewer is verifying
+1. Open [http://localhost:5173/veriagent/dashboard](http://localhost:5173/veriagent/dashboard).
+2. Enter your `event_id` (`event-first-run-001`) and wait until lifecycle shows **Anchored** (full path) or confirm **Submitted** (quick path). Use **Refresh lifecycle** while waiting; `batch_id` fills in automatically once batched.
+3. When **Anchored**, use the evidence actions in order:
 
-The Dashboard answers: *“Does the platform’s stored evidence show this signed event was batched and anchored?”*
+   | Action | Purpose |
+   | --- | --- |
+   | **Lookup batch** | Batch metadata including Merkle root (optional sanity check) |
+   | **Get & verify proof** | Fetches the Merkle inclusion proof from the backend and runs a server-side verify |
+   | **Get anchor record** | Fetches the on-chain anchor record for the batch |
 
-It is a **read-only** trust surface. It does not hold private keys, does not submit events, and does not replace independent offline verification.
+4. After each successful fetch above, **Download proof JSON** and **Download anchor JSON** appear below the action buttons. Use them to save the exact API responses:
 
-When a `tx_hash` is present, the UI can link to the configured block explorer.
+   - Click **Download proof JSON** → save/move the file to `~/.veriagent/proof.json`
+   - Click **Download anchor JSON** → save/move the file to `~/.veriagent/anchor.json`
+
+   Your browser may save to `~/Downloads/proof.json` and `~/Downloads/anchor.json` first. Move or copy them into `~/.veriagent/` with those exact names.
+
+5. Confirm you already have the signed event from §8:
+
+   ```bash
+   ls -l ~/.veriagent/event.json
+   ```
+
+   That file was created by `veriagent submit --output-event ~/.veriagent/event.json` in §8.
+
+The Dashboard does not hold private keys. Downloading evidence JSON is a read-only operation — it does not modify audit records.
+
+When a `tx_hash` is present, the UI links to the configured block explorer.
+
+On the full path, continue to §11 for independent offline verification using the three local JSON files.
 
 ---
 
 ## 11. Independent verification
 
-This is the final trust step: prove the evidence yourself without trusting VeriAgent for the cryptographic checks.
+Full path only. Requires a batched and anchored event from §9 and evidence files from §10.
 
-### Prepare inputs
+Prove the evidence locally without trusting the VeriAgent server for cryptographic checks. The offline verifier **does not fetch** missing files — you must supply all three JSON paths yourself.
 
-You need:
+### Three local files
 
-1. The **signed event** JSON from `--output-event` (for example `~/.veriagent/event.json`), or fetch public event metadata and use its canonical form as documented in [15-independent-verifier.md](./15-independent-verifier.md).
-2. Merkle **proof** from `GET /audit/batches/{batch_id}/proof/{event_id}` (save e.g. to `~/.veriagent/proof.json`).
-3. **Anchor** record from `GET /audit/batches/{batch_id}/anchor` (save e.g. to `~/.veriagent/anchor.json`).
+| File | Created in | Contents |
+| --- | --- | --- |
+| `~/.veriagent/event.json` | §8 (`veriagent submit --output-event`) | Signed audit event |
+| `~/.veriagent/proof.json` | §10 (**Download proof JSON** on Dashboard) | Merkle inclusion proof (`GET /audit/batches/{batch_id}/proof/{event_id}` response) |
+| `~/.veriagent/anchor.json` | §10 (**Download anchor JSON** on Dashboard) | Anchor record (`GET /audit/batches/{batch_id}/anchor` response) |
 
-Discover `batch_id` from Dashboard/Console lifecycle status, or `GET /audit/events/{event_id}/status`.
+**Sequence:**
 
-### Offline CLI (recommended)
+1. §8 — `veriagent submit --output-event ~/.veriagent/event.json` creates `event.json`.
+2. §9 — wait until the event is **Batched** then **Anchored**.
+3. §10 — on the Dashboard, run **Get & verify proof** then **Get anchor record**, then use **Download proof JSON** and **Download anchor JSON**. Save/move the downloads to `~/.veriagent/proof.json` and `~/.veriagent/anchor.json`.
+4. Pre-check — all three files must exist before continuing:
+
+   ```bash
+   ls -l ~/.veriagent/event.json ~/.veriagent/proof.json ~/.veriagent/anchor.json
+   ```
+
+   If any file is missing, return to §10 (or §8 for `event.json`). The verifier will fail with `Unable to read file` when a path is absent.
+
+### Fully offline CLI (recommended)
+
+Uses only local files — no live API calls:
+
+**CLI terminal** — working directory `sdk/python/`, SDK venv active:
 
 ```bash
 veriagent verify \
@@ -510,28 +527,31 @@ veriagent verify \
   --anchor ~/.veriagent/anchor.json
 ```
 
-Expected human output starts with `PASS` and lists checks such as:
+Expected output starts with `PASS` and lists checks for event hash, Ed25519 signature, Merkle inclusion, and anchor metadata. Exit codes: `0` PASS, `1` FAIL, `2` malformed input.
 
-- event canonical hash  
-- proof event-hash match  
-- Ed25519 signature vs `did:key`  
-- Merkle inclusion  
-- anchor Merkle root / batch id match  
-- anchor metadata present  
+### API-assisted CLI (checks still local)
 
-Exit codes: `0` PASS, `1` FAIL, `2` malformed input / fetch error.
+Alternative when you have `event.json` but not the proof/anchor files. The CLI **fetches** proof and anchor JSON from the backend, then runs the same local verifier — it does not write `proof.json` or `anchor.json` for you:
 
-### API-assisted fetch (checks still local)
+**CLI terminal** — working directory `sdk/python/`, SDK venv active:
 
 ```bash
 veriagent verify \
   --event ~/.veriagent/event.json \
   --api-base-url http://127.0.0.1:8000 \
-  --batch-id <batch_id> \
+  --batch-id BATCH_ID_HERE \
   --event-id event-first-run-001
 ```
 
-Fetched JSON is only input to the same local verifier. The CLI does **not** yet re-query the chain via RPC (`getBatch`); that remains a documented future enhancement.
+Replace `BATCH_ID_HERE` with the `batch_id` from the Dashboard lifecycle view. Fetched JSON is input to the local verifier only; the CLI does not re-query the chain via RPC (`getBatch`).
+
+**Summary**
+
+| Method | Needs network | Local files required |
+| --- | --- | --- |
+| Dashboard inspect + download (§10) | Yes (read-only) | Saves `proof.json`, `anchor.json` for offline use |
+| Fully offline verify | No | All three: `event.json`, `proof.json`, `anchor.json` |
+| API-assisted CLI verify | Yes (fetch proof/anchor) | `event.json` only |
 
 ---
 
@@ -539,7 +559,7 @@ Fetched JSON is only input to the same local verifier. The CLI does **not** yet 
 
 | Symptom | Likely cause | Fix |
 | --- | --- | --- |
-| Registration routes **404** | `VERIAGENT_REGISTRATION_ENABLED` not truthy | Export `true` and restart Uvicorn |
+| Registration routes **404** | `VERIAGENT_REGISTRATION_ENABLED` not truthy | Set `true` in `backend/.env` and restart the Backend |
 | Frontend talks to wrong API | `VITE_API_BASE_URL` override or remote build | Unset `VITE_API_BASE_URL` for local default `http://127.0.0.1:8000`, or set it explicitly |
 | Env vars ignored | `.env` missing or wrong working directory | Ensure `backend/.env` exists beside `requirements.txt`; restart Uvicorn; exported vars override `.env` |
 | **Registration expired** | Challenge TTL elapsed (including while waiting for admin) | Increase `VERIAGENT_REGISTRATION_CHALLENGE_TTL_MINUTES`, create a new request, prove promptly |
@@ -557,22 +577,22 @@ Fetched JSON is only input to the same local verifier. The CLI does **not** yet 
 
 ## 13. Architecture summary
 
-VeriAgent’s production trust model separates **custody**, **orchestration**, and **verification**:
+VeriAgent separates **custody**, **orchestration**, and **verification**:
 
 | Component | Responsibility |
 | --- | --- |
-| **SDK / CLI** | Owns the agent private key. Derives DID, proves registration, claims the API key, signs audit events, runs offline verify. |
-| **Backend API** | Stores registration and audit data, verifies signatures server-side, batches events, anchors Merkle roots, issues one-time credentials, exposes public evidence reads and ops status. |
-| **Console** | Operator portal to list *your* submitted events and watch Submitted → Batched → Anchored. Does not sign. |
+| **CLI / SDK** | Owns the agent private key. Derives DID, proves registration, claims the API key, signs audit events, runs offline verify. |
+| **Backend** | Stores registration and audit data, verifies signatures, batches events, anchors Merkle roots, issues one-time credentials, exposes public evidence reads and ops status. |
+| **Console** | Operator portal to list your submitted events and watch Submitted → Batched → Anchored. Does not sign. |
 | **Dashboard** | Public, read-only evidence viewer. Platform-assisted verification for auditors. |
-| **Admin** | Human review of registration requests; approve/reject. Never the place to generate agent keypairs. |
-| **Offline Verifier** | Recomputes hash, signature, Merkle inclusion, and anchor metadata locally so a third party need not trust the VeriAgent server for those checks. |
+| **Admin** | Human review of registration requests; approve/reject. Never generates agent keypairs. |
+| **Offline verifier** | Recomputes hash, signature, Merkle inclusion, and anchor metadata locally. |
 
-Emphasized invariants:
+**Invariants:**
 
-- The **browser never owns** the agent private key.
-- All cryptographic operations for agents are performed by the **SDK/CLI**.
-- The **Dashboard is read-only by design**.
-- The **Offline Verifier** is the final step for independent assurance without trusting the VeriAgent server.
+- The browser never owns the agent private key.
+- All agent cryptographic operations run in the CLI / SDK.
+- The Dashboard is read-only by design.
+- Offline verification is the final step for independent assurance.
 
-For surface diagrams and auth notes, see [16-production-architecture.md](./16-production-architecture.md). For verifier details, see [15-independent-verifier.md](./15-independent-verifier.md).
+For architecture diagrams and auth detail, see [16-production-architecture.md](./16-production-architecture.md). For verifier detail, see [15-independent-verifier.md](./15-independent-verifier.md).

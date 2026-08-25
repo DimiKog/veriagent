@@ -122,6 +122,10 @@ def test_anchor_batch_valid_admin_key_succeeds(monkeypatch):
         "app.batch_anchoring.anchoring.get_onchain_batch",
         fake_get_onchain_batch,
     )
+    monkeypatch.setattr(
+        "app.batch_anchoring.anchoring.is_batch_anchored",
+        lambda *_a, **_k: False,
+    )
 
     response = post_batch_anchor(client, batch["batch_id"], admin_key=TEST_ADMIN_API_KEY)
 

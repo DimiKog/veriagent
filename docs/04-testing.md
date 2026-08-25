@@ -55,7 +55,7 @@ python -m pytest -v
 | `tests/test_event_status_api.py` | Public `GET /audit/events/{event_id}/status` lifecycle lookup and secret exclusion |
 | `tests/test_anchoring.py` | On-chain anchor helpers (batch id, metadata hash, ABI loading, config) |
 | `tests/test_batch_anchor_api.py` | Batch anchor API with monkeypatched web3 calls (no Anvil required) |
-| `tests/test_auto_anchor_scheduler.py` | Automatic batch/anchor scheduler cycle (no events, threshold, anchor failure) |
+| `tests/test_auto_anchor_scheduler.py` | Automatic batch/anchor scheduler (unanchored-first, stranded recovery, threshold, failure retry) |
 | `tests/test_ops_status.py` | Public `GET /ops/status` fields, secret exclusion, config, and last scheduler state |
 | `tests/test_agents_api.py` | Agent registry registration, Ed25519 `did:key` binding validation, and lookup with admin key auth |
 | `tests/test_registration_requests.py` | Registration request create/proof/status workflow, feature flag, challenge expiry, and duplicate DID constraints |
@@ -157,7 +157,8 @@ Coverage includes:
 - **No events** — logs `auto anchor: no events`; no batch created
 - **Below threshold** — one unbatched event with `min_events=2`; no batch created
 - **Threshold reached** — batch created and anchored with mocked web3 calls; logs batch created and anchor succeeded
-- **Anchor failure** — batch remains in SQLite without anchor record; next cycle logs no events
+- **Anchor failure** — batch remains in SQLite without anchor record; next cycle retries the unanchored batch (does not only report `no events`)
+- **Stranded recovery** — locally unanchored + on-chain already anchored → reconciliation without a second `anchorBatch`
 
 Mocks patch `app.batch_anchoring.anchoring` and `app.batch_anchoring.load_anchoring_config`, same pattern as batch anchor API tests.
 

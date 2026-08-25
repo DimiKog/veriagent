@@ -75,6 +75,10 @@ def _install_anchor_mocks(monkeypatch, batch: dict):
         "app.batch_anchoring.anchoring.get_onchain_batch",
         fake_get_onchain_batch,
     )
+    monkeypatch.setattr(
+        "app.batch_anchoring.anchoring.is_batch_anchored",
+        lambda *_a, **_k: False,
+    )
     return anchor_calls
 
 
@@ -147,6 +151,10 @@ def test_post_anchor_does_not_store_record_when_transaction_reverts(monkeypatch)
     monkeypatch.setattr(
         "app.batch_anchoring.anchoring.wait_for_transaction_receipt",
         fake_wait_for_transaction_receipt,
+    )
+    monkeypatch.setattr(
+        "app.batch_anchoring.anchoring.is_batch_anchored",
+        lambda *_a, **_k: False,
     )
 
     response = post_batch_anchor(client, batch["batch_id"])

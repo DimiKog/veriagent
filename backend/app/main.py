@@ -14,7 +14,13 @@ if _ENV_FILE.is_file():
 
 from app.hashing import canonicalize_event, hash_event
 from app.merkle import merkle_proof, verify_inclusion_proof
-from app.anchoring import AnchorTransactionFailedError, AnchoringConfigError
+from app.anchoring import (
+    AnchorMetadataMismatchError,
+    AnchorReceiptPendingError,
+    AnchorReconciliationError,
+    AnchorTransactionFailedError,
+    AnchoringConfigError,
+)
 from app.batch_anchoring import BatchNotFoundError, perform_batch_anchor
 from app.auth import (
     authenticate_agent,
@@ -465,6 +471,16 @@ def anchor_batch_on_chain(batch_id: str, _: None = Depends(require_admin_api_key
         raise HTTPException(
             status_code=503,
             detail=f"Anchoring is not configured: {exc}",
+        ) from exc
+    except AnchorReceiptPendingError as exc:
+        raise HTTPException(
+            status_code=202,
+            detail=f"Anchor transaction submitted; receipt pending: {exc}",
+        ) from exc
+    except (AnchorMetadataMismatchError, AnchorReconciliationError) as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Anchor reconciliation failed: {exc}",
         ) from exc
     except AnchorTransactionFailedError as exc:
         raise HTTPException(
