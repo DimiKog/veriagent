@@ -133,3 +133,5 @@ src/
 ## GitHub Pages deployment
 
 Deployed automatically on push to **`master`** via [`.github/workflows/deploy-frontend.yml`](../.github/workflows/deploy-frontend.yml). Site: `https://dimikog.github.io/veriagent/`.
+
+`npm run build` copies `dist/index.html` to `dist/404.html`. That mitigates the GitHub Pages deep-link UX issue: a hard refresh or direct open of `/veriagent/dashboard` (and other client routes) still loads the SPA so `BrowserRouter` can resolve the path. Direct route requests still receive **HTTP 404** before GitHub Pages serves the custom `404.html` shell. Asset URLs stay under `/veriagent/` via Vite `base`.

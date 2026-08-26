@@ -32,6 +32,7 @@ jobs:
 
       - name: Build
         working-directory: frontend
+        # build copies index.html → 404.html for GitHub Pages SPA deep-link fallback
         run: npm run build
 
       - name: Deploy to gh-pages branch

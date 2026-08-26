@@ -217,7 +217,7 @@ Do **not** build additional admin product features that depend on this unlock me
 | Admin key paste | Not production SSO | Sessions / IdP |
 | No list/revoke agents APIs | Admin placeholders only | Small admin APIs later |
 | No org-scoped event APIs | Console cannot show multi-agent fleets without key paste | Operator session + agent directory |
-| GH Pages SPA deep links | Need `404.html` rewrite for client routes | Deploy config |
+| GH Pages SPA deep links | Mitigated for UX — build emits `404.html` (copy of `index.html`) so hard refresh / direct client routes load the SPA | Direct route requests still receive HTTP 404 before Pages serves custom `404.html` |
 
 ---
 
