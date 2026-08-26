@@ -142,7 +142,7 @@ If the API starts successfully and `/health` responds as shown below, `backend/.
 {
   "status": "ok",
   "service": "veriagent",
-  "version": "1.0.0-rc.1"
+  "version": "1.0.0"
 }
 ```
 
@@ -151,7 +151,7 @@ If the API starts successfully and `/health` responds as shown below, `backend/.
 ```json
 {
   "service": "veriagent",
-  "version": "1.0.0-rc.1",
+  "version": "1.0.0",
   "auto_anchor_enabled": false,
   "interval_seconds": 300,
   "min_events": 1,

@@ -121,7 +121,7 @@ async def lifespan(_: FastAPI):
         await stop_auto_anchor_scheduler(scheduler_task, scheduler_stop)
 
 
-API_VERSION = "1.0.0-rc.1"
+API_VERSION = "1.0.0"
 
 app = FastAPI(title="VeriAgent API", version=API_VERSION, lifespan=lifespan)
 

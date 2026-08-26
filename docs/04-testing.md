@@ -327,7 +327,7 @@ Full trust-chain validation requires **signed** event ingestion via the [Python 
 
 With the [public SPA](https://dimikog.github.io/veriagent/) and API at `https://veriagent.dimikog.org` (or local first-run):
 
-1. **API health check** — expect a healthy response with API version `1.0.0-rc.1`.
+1. **API health check** — expect a healthy response with API version `1.0.0`.
 2. **Register** — submit public identity on `/register`; prove and claim with the CLI (never paste private keys into the browser).
 3. **Submit** — `veriagent submit` (or SDK); unlock **Console** with the agent API key to list events.
 4. **Lifecycle** — observe Submitted → Batched → Anchored on Console or Dashboard.

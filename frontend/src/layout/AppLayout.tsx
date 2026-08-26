@@ -22,7 +22,7 @@ export function AppLayout() {
           </div>
           <h1>
             VeriAgent
-            <span className="dashboard__version">v1.0.0-rc.1</span>
+            <span className="dashboard__version">v1.0.0</span>
           </h1>
           <nav className="app-nav" aria-label="Primary">
             {NAV_LINKS.map(({ to, label }) => (

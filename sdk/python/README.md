@@ -1,4 +1,4 @@
-# VeriAgent Python SDK (v1.0.0-rc.1)
+# VeriAgent Python SDK (v1.0.0)
 
 Minimal Python client for external agents to submit Ed25519-signed audit events to a VeriAgent API without hand-rolling canonicalization, signing, or auth headers.
 

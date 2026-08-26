@@ -1,6 +1,6 @@
 # Deployment Guide
 
-VeriAgent is developed locally first. This guide documents what is deployed today (public API **`1.0.0-rc.1`**), how each component is published, and how to validate or troubleshoot releases.
+VeriAgent is developed locally first. This guide documents what is deployed today (public API **`1.0.0`**), how each component is published, and how to validate or troubleshoot releases.
 
 ## Public demo
 
@@ -9,7 +9,7 @@ VeriAgent is developed locally first. This guide documents what is deployed toda
 | SPA | https://dimikog.github.io/veriagent/ | GitHub Pages; Vite `base` is `/veriagent/` (Dashboard / Register / Console / Admin) |
 | API | https://veriagent.dimikog.org | FastAPI behind Nginx on a Linux VM |
 | API docs | https://veriagent.dimikog.org/docs | Swagger UI at `/docs` (not `/api/docs`) |
-| Health | https://veriagent.dimikog.org/health | Returns `version: "1.0.0-rc.1"` |
+| Health | https://veriagent.dimikog.org/health | Returns `version: "1.0.0"` |
 | Ops status | https://veriagent.dimikog.org/ops/status | Scheduler configuration and last-run metadata |
 | Block explorer | https://blockexplorer.dimikog.org/ | Blockscout; contract and txs verified on Besu Edu-Net |
 | Besu RPC (operator) | https://rpc.dimikog.org/rpc/ | Used by Foundry deploy and backend anchoring |
@@ -54,7 +54,7 @@ Deployment-relevant capabilities (detail in [docs/02-devlog.md](02-devlog.md) an
 - **Auto batch/anchor** — optional in-process scheduler; monitor via `GET /ops/status`.
 - **CORS** — FastAPI allowlist for `https://dimikog.github.io` and local Vite origins.
 - **Block explorer links** — `BLOCKSCOUT_TX_BASE` in `frontend/src/api/client.ts`.
-- **API version** — `/health` and OpenAPI metadata report `1.0.0-rc.1` (same string as the Python SDK and frontend badge).
+- **API version** — `/health` and OpenAPI metadata report `1.0.0` (same string as the Python SDK and frontend badge).
 - **GitHub Pages pipeline** — `.github/workflows/deploy-frontend.yml` publishes `frontend/dist/` to **`gh-pages`**.
 
 The frontend **never** holds agent private keys, admin keys, wallet private keys, or anchor signing secrets. Anchoring is server-side only. Production agents sign via the **Python SDK/CLI** (`sdk/python/`).
@@ -136,7 +136,7 @@ Store secrets in a gitignored `backend/.env` on the host (loaded automatically o
 curl -s https://veriagent.dimikog.org/health | jq .
 ```
 
-Expected includes `"version": "1.0.0-rc.1"`. If you still see an older version, the running process was not restarted after the version bump.
+Expected includes `"version": "1.0.0"`. If you still see an older version, the running process was not restarted after the version bump.
 
 6. Verify CORS for the dashboard (see [CORS](#cors-browser-frontend) below).
 
@@ -252,7 +252,7 @@ Live check — page source should load JS/CSS under `/veriagent/assets/` that ex
 
 Use https://dimikog.github.io/veriagent/ (and the CLI/SDK for signing):
 
-1. **API health check** — expect healthy status and API `1.0.0-rc.1`.
+1. **API health check** — expect healthy status and API `1.0.0`.
 2. **Register / claim** — public Register page + `veriagent register prove|claim` (private keys stay on the agent host).
 3. **Submit signed audit event** — `veriagent submit` or Python SDK; confirm `event_id` / `event_hash`.
 4. **Observe lifecycle** — Console or Dashboard: Submitted → Batched → Anchored (scheduler or admin batch/anchor).
