@@ -85,8 +85,8 @@ Implemented:
 - Constant-time admin key comparison via existing `require_admin_api_key` helper.
 - Public read endpoints unchanged: `GET /audit/batches/{batch_id}`, proof, and anchor record routes remain open.
 
-Not yet implemented:
-- Frontend or SDK updates to supply the admin key for batch/anchor operations (operator curl or server-side automation only for now).
+At v0.9.6, not yet implemented:
+- Frontend or SDK updates to supply the admin key for batch/anchor operations (operator curl or server-side automation only at that point).
 
 ## v1.0.0-rc.1 — Residual Risk: Console Credential Exposure
 
@@ -98,6 +98,12 @@ Mitigations in place:
 - The `DevAuthBanner` makes the temporary operator-unlock model visible instead of hiding it.
 
 Production path (not yet implemented): operator authentication/SSO issuing a Console session, with the agent API key remaining a machine credential for SDK/CLI and agent hosts only.
+
+## v1.0.0-rc.1 — Residual Risk: Anchor Submission Race on Crash-Restart
+
+If the process terminates after broadcasting an anchor transaction but before persisting its pending transaction record, the scheduler can recover the batch through on-chain reconciliation once the transaction becomes observable. A narrow pre-confirmation window remains in which a restarted scheduler may attempt a duplicate submission before the original transaction is visible; the smart contract's per-batch uniqueness check prevents duplicate anchoring, although an additional reverted transaction may occur.
+
+This is a duplicate-submission race, not a durability or recovery gap — the per-batch uniqueness constraint (`BatchAlreadyAnchored`) is enforced on-chain, not by off-chain coordination, so no divergent or double-anchored state is possible. Worst case is one extra reverted transaction (gas cost, no data-integrity impact). Not a blocker for RC.
 
 ## Future Mitigations
 
